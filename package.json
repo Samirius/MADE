@@ -1,6 +1,6 @@
 {
   "name": "made",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MADE — the open multiplayer agentic development environment. Works with any git, anywhere.",
   "type": "module",
   "scripts": {
