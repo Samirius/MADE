@@ -1,0 +1,35 @@
+{
+  "8pt73gao": {
+    "id": "8pt73gao",
+    "name": "Samir Testing",
+    "branch": "made/8pt73gao-Samir-Testing",
+    "workDir": "/home/stark/ace-workspace/.sessions/8pt73gao",
+    "createdAt": 1778008980979,
+    "updatedAt": 1778008980979,
+    "createdBy": "r4cg9peq",
+    "agentRunning": false,
+    "lastCommit": null,
+    "summary": "",
+    "messages": [
+      {
+        "id": "iodnj4dk",
+        "sessionId": "8pt73gao",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "system",
+        "content": "Session \"Samir Testing\" created. Branch: made/8pt73gao-Samir-Testing",
+        "timestamp": 1778008980979
+      },
+      {
+        "id": "bvebq3o2",
+        "sessionId": "8pt73gao",
+        "userId": "r4cg9peq",
+        "userName": "Samir",
+        "type": "chat",
+        "content": "hello",
+        "timestamp": 1778008985773
+      }
+    ],
+    "plan": null
+  }
+}

@@ -6,7 +6,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import { URL } from "node:url";
+import { URL, fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { execSync, spawn } from "node:child_process";
 import pty from "node-pty";
@@ -189,6 +189,11 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
   } else if (AGENT_CMD === "opencode") {
     args = ["-p", fullPrompt];
     cmd = "opencode";
+  } else if (AGENT_CMD === "glm") {
+    const glmModel = model === "haiku" ? "--model glm-4-flash" : "--model glm-5.1";
+    const scriptPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'made-glm-agent.py');
+    args = [glmModel, fullPrompt];
+    cmd = scriptPath;
   } else {
     args = ["-c", `${AGENT_CMD} ${modelFlag} "${fullPrompt}"`];
     cmd = "bash";
