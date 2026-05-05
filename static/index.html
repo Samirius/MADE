@@ -218,16 +218,18 @@ async function openSession(id) {
     <div id="session-content" style="flex:1;display:flex;flex-direction:column;min-height:0">
     <div class="chat-area" id="chat-area"></div>
     <div class="input-area">
-      <div class="input-box">
+      <div class="input-box" style="position:relative">
         <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
           <button class="mode-btn ${state.inputMode==='chat'?'active':''}" onclick="setInputMode('chat')" id="mode-chat">💬 Chat</button>
           <button class="mode-btn ${state.inputMode==='ace'?'active':''}" onclick="setInputMode('ace')" id="mode-ace">✦ Ace</button>
           <span style="color:var(--text-dim);font-size:10px;margin-left:4px">Tab to switch</span>
         </div>
         <textarea id="chat-input" placeholder="${state.inputMode==='ace'?'Ask the agent anything...':'Message this session, or type @ace to prompt the agent...'}" rows="1" 
-          oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'"
+          oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';handleAutocompleteInput(event)"
           onkeydown="handleInputKey(event)"></textarea>
         <div class="input-actions">
+          <button class="file-attach-btn" onclick="document.getElementById('file-upload-input').click()" title="Attach image">📎</button>
+          <input type="file" id="file-upload-input" accept="image/*" style="display:none" onchange="handleFileUpload(this)">
           <select class="model-select" id="model-select">
             <option value="opus">Opus</option>
             <option value="sonnet">Sonnet</option>
@@ -235,6 +237,8 @@ async function openSession(id) {
           </select>
           <button class="send-btn" onclick="sendChat()" title="Send">▶</button>
         </div>
+        <div id="autocomplete-dropdown" class="autocomplete-dropdown" style="display:none"></div>
+        <div id="upload-preview-area" style="display:none;padding:4px 0"></div>
       </div>
     </div>
     </div>
@@ -244,6 +248,9 @@ async function openSession(id) {
   const chat = document.getElementById('chat-area');
   state.messages[id].forEach(m => appendMessage(m, false));
   chat.scrollTop = chat.scrollHeight;
+
+  // Setup paste handler for image uploads
+  setupPasteHandler();
 }
 
 function appendMessage(m, scroll = true) {
@@ -254,17 +261,27 @@ function appendMessage(m, scroll = true) {
   if (m.deleted) return;
 
   const avatarEmoji = {
-    system: '⚡', agent: '🤖', terminal: '⌨',
+    system: '⚡', agent: '🤖', terminal: '⌨', image: '🖼',
   }[m.type] || '👤';
 
   const contentClass = {
     agent_start: '', agent_stream: 'agent', agent_done: '',
-    terminal: 'terminal', system: 'system',
+    terminal: 'terminal', system: 'system', image: '',
   }[m.type] || '';
 
   const time = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const isOwn = m.userId === state.userId && m.type === 'chat';
   const editedBadge = m.editedAt ? '<span style="color:var(--text-dim);font-size:10px;margin-left:4px">(edited)</span>' : '';
+
+  // Determine content rendering: plain text for chat/system, rich for agent/terminal, special for image
+  let renderedContent;
+  if (m.type === 'image') {
+    renderedContent = ''; // built separately below
+  } else if (m.type === 'agent_stream' || m.type === 'agent_done' || m.type === 'terminal' || m.type === 'agent_start') {
+    renderedContent = renderRichContent(m.content || '');
+  } else {
+    renderedContent = escHtml(m.content);
+  }
 
   const div = document.createElement('div');
   div.className = 'message';
@@ -281,9 +298,30 @@ function appendMessage(m, scroll = true) {
           <button onclick="deleteMessage('${m.id}')" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:11px;padding:0 4px" title="Delete">🗑</button>
         </span>` : ''}
       </div>
-      <div class="msg-content ${contentClass}" id="msg-content-${m.id}">${escHtml(m.content)}</div>
+      <div class="msg-content ${contentClass}" id="msg-content-${m.id}">${renderedContent}</div>
     </div>
   `;
+
+  // For image messages, build the image element safely
+  if (m.type === 'image') {
+    const contentEl = div.querySelector('.msg-content');
+    contentEl.textContent = '';
+    const img = document.createElement('img');
+    img.className = 'chat-image';
+    img.src = m.content;
+    img.alt = m.fileName || 'Uploaded image';
+    img.onclick = () => showImageModal(m.content);
+    contentEl.appendChild(img);
+    const info = document.createElement('div');
+    info.className = 'chat-image-info';
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = m.fileName || 'image';
+    const sizeSpan = document.createElement('span');
+    sizeSpan.textContent = formatFileSize(m.fileSize || 0);
+    info.appendChild(nameSpan);
+    info.appendChild(sizeSpan);
+    contentEl.appendChild(info);
+  }
   // Show edit/delete on hover
   if (isOwn) {
     div.addEventListener('mouseenter', () => { const a = div.querySelector('.msg-actions'); if(a) a.style.display = 'inline'; });
@@ -294,6 +332,146 @@ function appendMessage(m, scroll = true) {
 }
 
 function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ─── Sprint 3: Helper Functions ───────────────────────────
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function showImageModal(src) {
+  const modal = document.createElement('div');
+  modal.className = 'image-modal';
+  modal.onclick = () => modal.remove();
+  const img = document.createElement('img');
+  img.src = src;
+  modal.appendChild(img);
+  document.body.appendChild(modal);
+}
+
+// ─── Diff Renderer ─────────────────────────────────────────
+function renderDiffContent(content) {
+  const lines = content.split('\n');
+  let inDiff = false;
+  let result = '';
+  let diffBuffer = [];
+
+  function flushDiff() {
+    if (diffBuffer.length === 0) return;
+    const container = document.createElement('div');
+    container.className = 'diff-block';
+    for (const line of diffBuffer) {
+      const el = document.createElement('div');
+      if (line.startsWith('+++ ') || line.startsWith('--- ')) {
+        el.className = 'diff-header';
+        const fileName = escHtml(line.slice(4).replace('a/', '').replace('b/', ''));
+        const badge = line.startsWith('+++ ') ? '<span class="file-badge">modified</span>' : '';
+        el.innerHTML = escHtml(line.slice(0, 4)) + fileName + badge;
+      } else if (line.startsWith('@@')) {
+        el.className = 'diff-hunk';
+        el.textContent = line;
+      } else if (line.startsWith('+')) {
+        el.className = 'diff-add';
+        el.textContent = line;
+      } else if (line.startsWith('-')) {
+        el.className = 'diff-remove';
+        el.textContent = line;
+      } else {
+        el.className = 'diff-context';
+        el.textContent = line;
+      }
+      container.appendChild(el);
+    }
+    result += container.outerHTML;
+    diffBuffer = [];
+  }
+
+  for (const line of lines) {
+    // Detect start of a diff block
+    if (line.startsWith('diff --git') || line.startsWith('--- ') || line.startsWith('+++ ')) {
+      if (!inDiff) {
+        // Flush any previous non-diff content
+        flushDiff();
+        inDiff = true;
+      }
+      diffBuffer.push(line);
+    } else if (inDiff && (line.startsWith('+') || line.startsWith('-') || line.startsWith('@') || line.startsWith(' ') || line === '')) {
+      diffBuffer.push(line);
+    } else {
+      if (inDiff) {
+        flushDiff();
+        inDiff = false;
+      }
+      // Non-diff line
+      result += escHtml(line) + '\n';
+    }
+  }
+  flushDiff();
+  return result || escHtml(content);
+}
+
+function isDiffContent(content) {
+  if (!content) return false;
+  return content.includes('diff --git') || (/^--- .*\n\+\+\+ /m.test(content)) || (content.split('\n').filter(l => l.startsWith('+') || l.startsWith('-')).length > 3);
+}
+
+// ─── Rich Content Renderer ──────────────────────────────────
+function renderRichContent(content) {
+  if (!content) return '';
+  // Step 1: Check for code blocks (```)
+  if (content.includes('```')) {
+    return renderCodeBlocks(content);
+  }
+  // Step 2: Check for diff content
+  if (isDiffContent(content)) {
+    return renderDiffContent(content);
+  }
+  // Step 3: Render inline — URLs, @mentions, then plain text
+  return renderInlineContent(content);
+}
+
+function renderCodeBlocks(content) {
+  // Split by ``` markers
+  const parts = content.split('```');
+  let result = '';
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 0) {
+      // Outside code block — render inline
+      result += renderInlineContent(parts[i]);
+    } else {
+      // Inside code block
+      const lines = parts[i].split('\n');
+      const firstLine = lines[0].trim();
+      const code = lines.slice(firstLine && !firstLine.includes(' ') ? 1 : 0).join('\n');
+      const lang = firstLine && !firstLine.includes(' ') ? firstLine : '';
+      const block = document.createElement('div');
+      block.className = 'code-block';
+      if (lang) {
+        const langBadge = document.createElement('div');
+        langBadge.className = 'code-lang';
+        langBadge.textContent = lang;
+        block.appendChild(langBadge);
+      }
+      const pre = document.createElement('pre');
+      pre.style.cssText = 'margin:0;white-space:pre-wrap;word-break:break-all;';
+      pre.textContent = code;
+      block.appendChild(pre);
+      result += block.outerHTML;
+    }
+  }
+  return result;
+}
+
+function renderInlineContent(content) {
+  // Process line by line for diff detection within mixed content
+  let html = escHtml(content);
+  // URLs → clickable links
+  html = html.replace(/(https?:\/\/[^\s<>"')\]]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+  // @mentions → highlighted
+  html = html.replace(/@(\w[\w.-]*)/g, '<span class="mention-highlight">@$1</span>');
+  return html;
+}
 
 // ─── Message Edit / Delete ───────────────────────────────
 async function editMessage(msgId) {
@@ -356,9 +534,244 @@ function cancelEdit(msgId, original) {
   if (msgEl) msgEl.textContent = original;
 }
 
+// Autocomplete state
+let _acState = { active: false, items: [], index: -1, trigger: '', triggerStart: 0 };
+const COMMANDS = [
+  { cmd: '/agent', desc: 'Send prompt to agent', icon: '🤖' },
+  { cmd: '/plan', desc: 'Switch to plan tab', icon: '📋' },
+  { cmd: '/commit', desc: 'Open commit dialog', icon: '💾' },
+  { cmd: '/run', desc: 'Execute in terminal', icon: '⌨' },
+  { cmd: '/clear', desc: 'Clear chat messages', icon: '🗑' },
+];
+
 function handleInputKey(e) {
+  const input = document.getElementById('chat-input');
+  if (!input) return;
+
+  // Autocomplete navigation
+  if (_acState.active) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); _acState.index = Math.min(_acState.index + 1, _acState.items.length - 1); renderAutocomplete(); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); _acState.index = Math.max(_acState.index - 1, 0); renderAutocomplete(); return; }
+    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); selectAutocompleteItem(); return; }
+    if (e.key === 'Escape') { e.preventDefault(); hideAutocomplete(); return; }
+  }
+
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
-  if (e.key === 'Tab') { e.preventDefault(); setInputMode(state.inputMode === 'chat' ? 'ace' : 'chat'); }
+  if (e.key === 'Tab' && !_acState.active) { e.preventDefault(); setInputMode(state.inputMode === 'chat' ? 'ace' : 'chat'); }
+}
+
+// ─── Autocomplete System ────────────────────────────────
+function handleAutocompleteInput(e) {
+  const input = document.getElementById('chat-input');
+  if (!input) return;
+  const text = input.value;
+  const cursorPos = input.selectionStart;
+
+  // Find the current "word" being typed
+  const textBeforeCursor = text.slice(0, cursorPos);
+  const wordMatch = textBeforeCursor.match(/([@#\/+])(\w*)$/);
+
+  if (!wordMatch) {
+    // Check for + at exact position (trigger file upload)
+    if (textBeforeCursor.endsWith('+') && (textBeforeCursor.length === 1 || textBeforeCursor[textBeforeCursor.length - 2] === ' ' || textBeforeCursor[textBeforeCursor.length - 2] === '\n')) {
+      // Don't show dropdown, just trigger upload on next keystroke if desired
+      hideAutocomplete();
+      return;
+    }
+    hideAutocomplete();
+    return;
+  }
+
+  const trigger = wordMatch[1];
+  const query = wordMatch[2].toLowerCase();
+  const triggerStart = cursorPos - trigger.length - query.length;
+
+  let items = [];
+
+  if (trigger === '@') {
+    // Show users
+    fetchUsers().then(users => {
+      items = users.filter(u => u.name.toLowerCase().includes(query)).map(u => ({
+        label: u.name, value: u.name, icon: '👤', hint: 'user',
+      }));
+      showAutocomplete(items, trigger, triggerStart);
+    });
+    return;
+  }
+
+  if (trigger === '#') {
+    items = (state.sessions || []).filter(s => s.name.toLowerCase().includes(query)).map(s => ({
+      label: s.name, value: s.id, icon: '📝', hint: 'session',
+    }));
+    showAutocomplete(items, trigger, triggerStart);
+    return;
+  }
+
+  if (trigger === '/') {
+    // Only at start of line
+    const lineStart = textBeforeCursor.lastIndexOf('\n') + 1;
+    if (triggerStart !== lineStart) { hideAutocomplete(); return; }
+    items = COMMANDS.filter(c => c.cmd.includes(query)).map(c => ({
+      label: c.cmd, value: c.cmd, icon: c.icon, hint: c.desc,
+    }));
+    showAutocomplete(items, trigger, triggerStart);
+    return;
+  }
+
+  hideAutocomplete();
+}
+
+async function fetchUsers() {
+  try {
+    const data = await api('/api/users');
+    return data.users || [];
+  } catch { return []; }
+}
+
+function showAutocomplete(items, trigger, triggerStart) {
+  if (items.length === 0) { hideAutocomplete(); return; }
+  _acState = { active: true, items, index: 0, trigger, triggerStart };
+  renderAutocomplete();
+}
+
+function hideAutocomplete() {
+  _acState.active = false;
+  _acState.items = [];
+  _acState.index = -1;
+  const dd = document.getElementById('autocomplete-dropdown');
+  if (dd) dd.style.display = 'none';
+}
+
+function renderAutocomplete() {
+  const dd = document.getElementById('autocomplete-dropdown');
+  if (!dd || !_acState.active) return;
+  dd.style.display = 'block';
+  dd.innerHTML = _acState.items.map((item, i) =>
+    `<div class="autocomplete-item ${i === _acState.index ? 'active' : ''}" onmousedown="event.preventDefault();_acState.index=${i};selectAutocompleteItem()" onmouseover="_acState.index=${i};renderAutocomplete()">` +
+    `<span class="ac-icon">${item.icon}</span><span class="ac-label">${escHtml(item.label)}</span><span class="ac-hint">${escHtml(item.hint || '')}</span></div>`
+  ).join('');
+}
+
+function selectAutocompleteItem() {
+  const input = document.getElementById('chat-input');
+  if (!input || !_acState.active || _acState.items.length === 0) return;
+  const item = _acState.items[_acState.index];
+  if (!item) return;
+
+  const trigger = _acState.trigger;
+  const text = input.value;
+  const cursorPos = input.selectionStart;
+  const textBeforeCursor = text.slice(0, cursorPos);
+  const wordMatch = textBeforeCursor.match(new RegExp('\\' + trigger + '\\w*$'));
+  if (!wordMatch) { hideAutocomplete(); return; }
+
+  const replaceStart = cursorPos - wordMatch[0].length;
+  let insertText;
+
+  if (trigger === '/') {
+    // Commands: replace the whole line and execute
+    insertText = item.value + ' ';
+    input.value = text.slice(0, replaceStart) + insertText + text.slice(cursorPos);
+    input.selectionStart = input.selectionEnd = replaceStart + insertText.length;
+    hideAutocomplete();
+    input.focus();
+    // Execute command immediately for non-parameterized commands
+    if (item.value === '/plan') { switchTab('plan'); input.value = ''; }
+    else if (item.value === '/commit') { gitCommit(); input.value = ''; }
+    else if (item.value === '/clear') { clearChat(); input.value = ''; }
+    return;
+  }
+
+  if (trigger === '@') {
+    insertText = trigger + item.value + ' ';
+  } else if (trigger === '#') {
+    insertText = trigger + item.label + ' ';
+  } else {
+    insertText = item.value;
+  }
+
+  input.value = text.slice(0, replaceStart) + insertText + text.slice(cursorPos);
+  input.selectionStart = input.selectionEnd = replaceStart + insertText.length;
+  hideAutocomplete();
+  input.focus();
+}
+
+function clearChat() {
+  const chat = document.getElementById('chat-area');
+  if (chat) chat.innerHTML = '';
+  if (state.activeSession) state.messages[state.activeSession] = [];
+}
+
+// ─── File Upload ────────────────────────────────────────
+function handleFileUpload(inputEl) {
+  const file = inputEl.files?.[0];
+  if (!file || !state.activeSession) return;
+  uploadFile(file);
+  inputEl.value = '';
+}
+
+async function uploadFile(file) {
+  if (!state.activeSession) return;
+  // Validate type
+  const allowed = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
+  if (!allowed.includes(file.type)) {
+    alert('Only image files are supported (PNG, JPG, GIF, WebP, SVG)');
+    return;
+  }
+  // Validate size (5MB)
+  if (file.size > 5 * 1024 * 1024) {
+    alert('File too large. Maximum size is 5MB.');
+    return;
+  }
+
+  // Show preview
+  const previewArea = document.getElementById('upload-preview-area');
+  if (previewArea) {
+    previewArea.style.display = 'block';
+    const thumb = document.createElement('img');
+    thumb.className = 'upload-preview uploading';
+    thumb.src = URL.createObjectURL(file);
+    previewArea.innerHTML = '';
+    previewArea.appendChild(thumb);
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const r = await fetch(`${API}/api/sessions/${state.activeSession}/upload?userId=${state.userId}`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!r.ok) {
+      const err = await r.json();
+      alert('Upload failed: ' + (err.error || r.statusText));
+    }
+  } catch (err) {
+    alert('Upload failed: ' + err.message);
+  }
+
+  // Clear preview
+  if (previewArea) {
+    previewArea.style.display = 'none';
+    previewArea.innerHTML = '';
+  }
+}
+
+function setupPasteHandler() {
+  const input = document.getElementById('chat-input');
+  if (!input) return;
+  input.addEventListener('paste', (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file && state.activeSession) uploadFile(file);
+        return;
+      }
+    }
+  });
 }
 
 function setInputMode(mode) {
@@ -388,6 +801,16 @@ function sendChat() {
   if (text.startsWith('/agent ')) {
     const prompt = text.slice(7);
     promptAgentWithText(prompt);
+    input.value = '';
+    input.style.height = 'auto';
+    return;
+  }
+  if (text.startsWith('/run ')) {
+    const cmd = text.slice(5);
+    api(`/api/sessions/${state.activeSession}/exec`, {
+      method: 'POST',
+      body: JSON.stringify({ command: cmd, userId: state.userId }),
+    });
     input.value = '';
     input.style.height = 'auto';
     return;
@@ -973,7 +1396,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Escape') { closeModal(); hideAutocomplete(); }
+});
+
+// Dismiss autocomplete on outside click
+document.addEventListener('click', (e) => {
+  if (_acState.active && !e.target.closest('.input-box')) {
+    hideAutocomplete();
+  }
 });
 </script>
 </body>

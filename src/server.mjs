@@ -682,6 +682,115 @@ async function handleAPI(req, res, urlPath, method) {
     return send(json({ ok: true, message: "Generating plan..." }));
   }
 
+  // ─── Image Upload ─────────────────────────────────────
+  const uploadMatch = urlPath.match(/^\/api\/sessions\/([^/]+)\/upload$/);
+  if (uploadMatch && method === "POST") {
+    const s = sessions.get(uploadMatch[1]);
+    if (!s) return send(json({ error: "Not found" }, 404));
+    const sessionId = uploadMatch[1];
+
+    // Parse multipart manually
+    const contentType = req.headers["content-type"] || "";
+    if (!contentType.includes("multipart/form-data")) {
+      return send(json({ error: "Expected multipart/form-data" }, 400));
+    }
+
+    const boundary = contentType.split("boundary=")[1];
+    if (!boundary) return send(json({ error: "Missing boundary" }, 400));
+
+    const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+    const ALLOWED = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg"]);
+
+    try {
+      const chunks = [];
+      let totalSize = 0;
+      const bodyPromise = new Promise((resolve, reject) => {
+        req.on("data", (c) => { totalSize += c.length; if (totalSize > MAX_SIZE) { reject(new Error("File too large")); req.destroy(); } else chunks.push(c); });
+        req.on("end", () => resolve(Buffer.concat(chunks)));
+        req.on("error", reject);
+      });
+
+      const body = await bodyPromise;
+      const boundaryBuf = Buffer.from("--" + boundary);
+      const parts = [];
+      let start = 0;
+
+      while (true) {
+        const idx = body.indexOf(boundaryBuf, start);
+        if (idx === -1) break;
+        if (start > 0) parts.push(body.slice(start, idx - 2)); // -2 for \r\n before boundary
+        start = idx + boundaryBuf.length;
+        if (body[start] === 0x2d && body[start + 1] === 0x2d) break; // --
+        if (body[start] === 0x0d) start += 2; // skip \r\n
+      }
+
+      let uploadedFile = null;
+      for (const part of parts) {
+        const headerEnd = part.indexOf("\r\n\r\n");
+        if (headerEnd === -1) continue;
+        const header = part.slice(0, headerEnd).toString("utf8");
+        const fileData = part.slice(headerEnd + 4);
+        if (fileData.length > MAX_SIZE) return send(json({ error: "File too large (max 5MB)" }, 413));
+
+        // Extract filename
+        const nameMatch = header.match(/filename="([^"]+)"/);
+        if (!nameMatch) continue;
+        const fileName = nameMatch[1];
+        const ext = path.extname(fileName).slice(1).toLowerCase();
+
+        if (!ALLOWED.has(ext)) {
+          return send(json({ error: `File type .${ext} not allowed. Supported: png, jpg, gif, webp, svg` }, 400));
+        }
+
+        // Generate unique filename
+        const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const uploadDir = path.join(s.workDir, ".uploads");
+        fs.mkdirSync(uploadDir, { recursive: true });
+        const filePath = path.join(uploadDir, uniqueName);
+        fs.writeFileSync(filePath, fileData);
+
+        uploadedFile = { fileName, fileSize: fileData.length, uniqueName, url: `/api/sessions/${sessionId}/uploads/${uniqueName}` };
+      }
+
+      if (!uploadedFile) return send(json({ error: "No file found in upload" }, 400));
+
+      // Get userId from query string since body was consumed by multipart
+      const uploadUrl = new URL(req.url, `http://${req.headers.host}`);
+      const userId = uploadUrl.searchParams.get("userId") || "anon";
+
+      // Create message and broadcast
+      const msg = {
+        id: uid(), sessionId, userId,
+        userName: users.get(userId)?.name || "User",
+        type: "image", content: uploadedFile.url,
+        fileName: uploadedFile.fileName, fileSize: uploadedFile.fileSize,
+        timestamp: now(),
+      };
+      s.messages.push(msg);
+      broadcastToSession(sessionId, { type: "message", message: msg });
+      scheduleSave();
+      return send(json({ ok: true, message: msg }));
+    } catch (err) {
+      return send(json({ error: err.message || "Upload failed" }, 500));
+    }
+  }
+
+  // ─── Serve Uploaded Files ─────────────────────────────
+  const uploadsMatch = urlPath.match(/^\/api\/sessions\/([^/]+)\/uploads\/(.+)$/);
+  if (uploadsMatch && method === "GET") {
+    const s = sessions.get(uploadsMatch[1]);
+    if (!s) return send(json({ error: "Not found" }, 404));
+    const filename = uploadsMatch[2];
+    const filePath = path.join(s.workDir, ".uploads", filename);
+    if (!filePath.startsWith(s.workDir)) return send(json({ error: "Forbidden" }, 403));
+    if (!fs.existsSync(filePath)) return send(json({ error: "Not found" }, 404));
+    const ext = path.extname(filePath).slice(1).toLowerCase();
+    const types = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml" };
+    res.writeHead(200, { "Content-Type": types[ext] || "application/octet-stream", "Cache-Control": "public, max-age=86400" });
+    fs.createReadStream(filePath).pipe(res);
+    return;
+  }
+
   send(json({ error: "Not found" }, 404));
 }
 
