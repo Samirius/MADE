@@ -16,11 +16,15 @@ Session = Chat Channel + Git Branch + Agent
 
 - **Multiplayer sessions** — like Slack channels, but for coding
 - **Agent integration** — prompt Claude Code / Codex / OpenCode from the chat
+- **Interactive terminal** — real bash shell in the browser per session
+- **File browser** — browse, read, write files in session workspace
+- **Live preview** — see HTML output in an iframe
 - **Real-time** — WebSocket updates, see agent output as it streams
-- **Terminal** — run commands in the session workspace from the UI
 - **Dashboard** — pick up where you left off, see active sessions
+- **Persistent** — sessions survive server restarts
 - **Zero dependencies** (server) — pure Node.js + one npm package (`ws`)
 - **Self-hosted** — runs on any machine with Node.js 18+
+- **Docker ready** — one command to deploy
 
 ## Quick start
 
@@ -30,6 +34,19 @@ cd ace-workspace
 npm install
 npm start
 # Open http://localhost:3000
+```
+
+## Docker
+
+```bash
+docker compose up -d
+# Open http://localhost:3000
+```
+
+Or with a custom agent:
+
+```bash
+ACE_AGENT_CMD=codex docker compose up -d
 ```
 
 ## Configuration
@@ -83,9 +100,13 @@ npm start
 | `DELETE` | `/api/sessions/:id` | Delete session |
 | `POST` | `/api/sessions/:id/agent` | Spawn agent `{prompt, model}` |
 | `POST` | `/api/sessions/:id/exec` | Run command `{command}` |
+| `GET` | `/api/sessions/:id/files/*` | Browse/read files |
+| `PUT` | `/api/sessions/:id/files/*` | Write file `{content}` |
+| `GET` | `/api/sessions/:id/preview/*` | Live preview proxy |
 | `POST` | `/api/users` | Create/join user |
 
 WebSocket at `/ws` — join sessions, chat, stream agent output.
+Terminal WebSocket at `/term/:sessionId` — interactive bash shell.
 
 ## Why this exists
 
