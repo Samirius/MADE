@@ -8,9 +8,9 @@ The project is inspired by GitHub Next's "Ace" (Agent Collaboration Environment)
 
 **Repository:** https://github.com/Samirius/ace-workspace  
 **License:** Apache 2.0  
-**Version:** 0.1.0  
+**Version:** 0.2.0  
 **Branch:** main-hermes  
-**Total commits:** 8  
+**Total commits:** 14  
 
 ---
 
@@ -26,7 +26,7 @@ The project is inspired by GitHub Next's "Ace" (Agent Collaboration Environment)
 | Containerization | Docker + docker-compose | Dockerfile based on `node:22-slim` |
 | Version Control | Git (per session) | Each session gets its own `git init` on creation |
 
-**Dependencies:** Exactly 1 — `ws` (WebSocket implementation for Node.js).
+**Dependencies:** Exactly 2 — `ws` (WebSocket) + `node-pty` (terminal).
 
 ---
 
@@ -52,7 +52,7 @@ ace-workspace/
 └── LICENSE                  #   7 lines — Apache 2.0 header
 ```
 
-**Total lines of code (excluding docs/config):** 1,772
+**Total lines of code (excluding docs/config):** 3,115
 
 ---
 
@@ -350,19 +350,11 @@ To run: `docker compose up -d`
 
 ## What This Does NOT Have (compared to GitHub Next's Ace)
 
-For accurate comparison, here is what GitHub Next's Ace has that this project does NOT implement:
-
 1. **MicroVM backing** — Ace uses cloud microVMs (sandboxed cloud computers). This project uses local filesystem directories.
-2. **VS Code integration** — Ace can open the session workspace in VS Code with multiplayer editing. This project does not.
-3. **Multiplayer cursor editing** — Ace shows multiple user cursors in plans. This project has a plain textarea.
-4. **Mobile interface** — Ace mentioned building one. This project has basic responsive CSS only.
-5. **Team pulse / activity feed** — Ace shows what teammates have been doing recently. This project has a basic dashboard.
-6. **Screenshots in chat** — Ace showed users pasting screenshots. This project's chat is text-only.
-7. **Session link in PR description** — Ace includes a link back to the session in the PR body. This project creates PRs but does not add a session link.
-8. **Persistent cloud sessions** — Ace sessions survive the user closing their laptop (cloud VMs). This project's sessions die when the server stops (though data is persisted to JSON).
-9. **Proactive agent notifications** — Ace's dashboard has agents that proactively remind you of unfinished work. This project's dashboard is static.
-10. **Authentication / access control** — No auth system. Anyone with the URL can create sessions and trigger agents.
-11. **Dev server proxy with auto-preview** — Ace auto-detects when a dev server starts and shows the preview. This project requires manually setting the preview URL.
+2. **VS Code integration** — Ace can open the session workspace in VS Code with multiplayer editing.
+3. **Multiplayer cursor editing** — Ace shows multiple user cursors in plans (CRDT). This project uses a plain textarea with optimistic locking.
+4. **Persistent cloud sessions** — Ace sessions survive the user closing their laptop (cloud VMs). This project's sessions persist to JSON but the process must stay running.
+5. **Mobile interface** — Basic responsive CSS only, not a dedicated mobile UI.
 
 ---
 

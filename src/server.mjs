@@ -390,7 +390,7 @@ async function handleAPI(req, res, urlPath, method) {
   const send = (r) => { res.writeHead(r.status, r.headers); res.end(r.body); };
 
   // Routes
-  if (urlPath === "/health" && method === "GET") return send(json({ status: "ok", version: "0.1.0" }));
+  if (urlPath === "/health" && method === "GET") return send(json({ status: "ok", version: "0.2.0" }));
 
   if (urlPath === "/api/sessions" && method === "GET") {
     return send(json({ sessions: Array.from(sessions.values()).map(sessionToJSON) }));
