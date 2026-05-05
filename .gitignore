@@ -6,3 +6,4 @@ dist/
 __pycache__/
 *.pyc
 .sessions/
+.ace-data/
