@@ -55,6 +55,19 @@ function createSession(name, userId) {
   const workDir = path.join(PROJECT_DIR, ".sessions", id);
   fs.mkdirSync(workDir, { recursive: true });
 
+  // Initialize git repo in workspace
+  try {
+    execSync("git init", { cwd: workDir, stdio: "ignore" });
+    execSync(`git checkout -b ${branch}`, { cwd: workDir, stdio: "ignore" });
+    // Write a README so there's something to commit
+    fs.writeFileSync(path.join(workDir, "README.md"), `# ${name}\n\nAce workspace session.\n`);
+    execSync("git add -A", { cwd: workDir, stdio: "ignore" });
+    execSync('git commit -m "init: Ace session" --no-gpg-sign', {
+      cwd: workDir, stdio: "ignore",
+      env: { ...process.env, GIT_AUTHOR_NAME: "Ace", GIT_AUTHOR_EMAIL: "ace@sabbk.com", GIT_COMMITTER_NAME: "Ace", GIT_COMMITTER_EMAIL: "ace@sabbk.com" },
+    });
+  } catch (e) { /* git may not be available, that's ok */ }
+
   const session = {
     id, name, branch, workDir,
     createdAt: now(), updatedAt: now(),
@@ -358,6 +371,86 @@ async function handleAPI(req, res, urlPath, method) {
     res.writeHead(200, { "Content-Type": types[ext] || "application/octet-stream" });
     fs.createReadStream(absPath).pipe(res);
     return;
+  }
+
+  // ─── Git Status ────────────────────────────────────────
+  const gitStatusMatch = urlPath.match(/^\/api\/sessions\/([^/]+)\/git\/status$/);
+  if (gitStatusMatch && method === "GET") {
+    const s = sessions.get(gitStatusMatch[1]);
+    if (!s) return send(json({ error: "Not found" }, 404));
+    try {
+      const status = execSync("git status --porcelain", { cwd: s.workDir, encoding: "utf8" });
+      const log = execSync("git log --oneline -10", { cwd: s.workDir, encoding: "utf8" });
+      const branch = execSync("git branch --show-current", { cwd: s.workDir, encoding: "utf8" }).trim();
+      return send(json({ branch, status: status.trim(), log: log.trim(), dirty: status.trim().length > 0 }));
+    } catch (e) {
+      return send(json({ error: e.message }, 500));
+    }
+  }
+
+  // ─── Git Diff ──────────────────────────────────────────
+  const gitDiffMatch = urlPath.match(/^\/api\/sessions\/([^/]+)\/git\/diff$/);
+  if (gitDiffMatch && method === "GET") {
+    const s = sessions.get(gitDiffMatch[1]);
+    if (!s) return send(json({ error: "Not found" }, 404));
+    try {
+      const diff = execSync("git diff HEAD", { cwd: s.workDir, encoding: "utf8", maxBuffer: 1024 * 1024 });
+      return send(json({ diff }));
+    } catch (e) {
+      return send(json({ error: e.message }, 500));
+    }
+  }
+
+  // ─── Git Commit ────────────────────────────────────────
+  const gitCommitMatch = urlPath.match(/^\/api\/sessions\/([^/]+)\/git\/commit$/);
+  if (gitCommitMatch && method === "POST") {
+    const s = sessions.get(gitCommitMatch[1]);
+    if (!s) return send(json({ error: "Not found" }, 404));
+    const body = await parseBody(req);
+    const message = body.message || "Update from Ace";
+    try {
+      execSync("git add -A", { cwd: s.workDir, stdio: "ignore" });
+      execSync(`git commit -m ${JSON.stringify(message)} --no-gpg-sign --allow-empty`, {
+        cwd: s.workDir, stdio: "ignore",
+        env: { ...process.env, GIT_AUTHOR_NAME: "Ace Agent", GIT_AUTHOR_EMAIL: "ace@sabbk.com", GIT_COMMITTER_NAME: "Ace Agent", GIT_COMMITTER_EMAIL: "ace@sabbk.com" },
+      });
+      s.lastCommit = message;
+      s.updatedAt = now();
+      scheduleSave();
+      broadcastAll({ type: "session_updated", session: sessionToJSON(s) });
+      return send(json({ ok: true, message }));
+    } catch (e) {
+      return send(json({ error: e.message }, 500));
+    }
+  }
+
+  // ─── Create PR ─────────────────────────────────────────
+  const prMatch = urlPath.match(/^\/api\/sessions\/([^/]+)\/pr$/);
+  if (prMatch && method === "POST") {
+    const s = sessions.get(prMatch[1]);
+    if (!s) return send(json({ error: "Not found" }, 404));
+    const body = await parseBody(req);
+    const title = body.title || s.name;
+    const repo = body.repo || "";
+    try {
+      // Auto-commit first
+      execSync("git add -A", { cwd: s.workDir, stdio: "ignore" });
+      try { execSync(`git commit -m ${JSON.stringify(title)} --no-gpg-sign --allow-empty`, { cwd: s.workDir, stdio: "ignore", env: { ...process.env, GIT_AUTHOR_NAME: "Ace", GIT_AUTHOR_EMAIL: "ace@sabbk.com", GIT_COMMITTER_NAME: "Ace", GIT_COMMITTER_EMAIL: "ace@sabbk.com" } }); } catch {}
+
+      // If repo specified, push and create PR via gh CLI
+      if (repo) {
+        execSync(`git remote add origin ${repo} 2>/dev/null || true`, { cwd: s.workDir, stdio: "ignore" });
+        execSync(`git push -u origin ${s.branch} 2>&1`, { cwd: s.workDir, encoding: "utf8" });
+        const prOut = execSync(`gh pr create --title ${JSON.stringify(title)} --body ${JSON.stringify(body.body || "Created by Ace Workspace")} --head ${s.branch}`, {
+          cwd: s.workDir, encoding: "utf8",
+        });
+        return send(json({ ok: true, prUrl: prOut.trim() }));
+      }
+
+      return send(json({ ok: true, message: "Committed. Push to a remote repo to create a PR." }));
+    } catch (e) {
+      return send(json({ error: e.message }, 500));
+    }
   }
 
   send(json({ error: "Not found" }, 404));

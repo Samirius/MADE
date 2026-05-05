@@ -119,6 +119,7 @@ async function openSession(id) {
         <button class="btn ${getActiveTab()==='chat'?'active':''}" onclick="switchTab('chat')">💬 Chat</button>
         <button class="btn ${getActiveTab()==='terminal'?'active':''}" onclick="switchTab('terminal')">⌨ Terminal</button>
         <button class="btn ${getActiveTab()==='files'?'active':''}" onclick="switchTab('files')">📁 Files</button>
+        <button class="btn ${getActiveTab()==='git'?'active':''}" onclick="switchTab('git')">🔀 Git</button>
         <button class="btn ${getActiveTab()==='preview'?'active':''}" onclick="switchTab('preview')">👁 Preview</button>
         <button class="btn btn-primary" onclick="promptAgent()">🤖 Agent</button>
       </div>
@@ -369,7 +370,7 @@ async function switchTab(tab) {
   // Re-render header buttons
   document.querySelectorAll('.header-actions .btn').forEach(b => b.classList.remove('active'));
   const btns = document.querySelectorAll('.header-actions .btn');
-  const tabMap = { chat: 0, terminal: 1, files: 2, preview: 3 };
+  const tabMap = { chat: 0, terminal: 1, files: 2, git: 3, preview: 4 };
   if (tabMap[tab] !== undefined && btns[tabMap[tab]]) btns[tabMap[tab]].classList.add('active');
 
   const content = document.getElementById('session-content');
@@ -380,10 +381,12 @@ async function switchTab(tab) {
     document.getElementById('term-panel')?.remove();
     document.getElementById('files-panel')?.remove();
     document.getElementById('preview-panel')?.remove();
+    document.getElementById('git-panel')?.remove();
   } else if (tab === 'terminal') {
     content.style.display = 'none';
     document.getElementById('files-panel')?.remove();
     document.getElementById('preview-panel')?.remove();
+    document.getElementById('git-panel')?.remove();
     if (!document.getElementById('term-panel')) {
       const panel = document.createElement('div');
       panel.id = 'term-panel';
@@ -396,6 +399,7 @@ async function switchTab(tab) {
     content.style.display = 'none';
     document.getElementById('term-panel')?.remove();
     document.getElementById('preview-panel')?.remove();
+    document.getElementById('git-panel')?.remove();
     if (!document.getElementById('files-panel')) {
       const panel = document.createElement('div');
       panel.id = 'files-panel';
@@ -404,10 +408,24 @@ async function switchTab(tab) {
       document.querySelector('.main').appendChild(panel);
       loadFiles('/');
     }
+  } else if (tab === 'git') {
+    content.style.display = 'none';
+    document.getElementById('term-panel')?.remove();
+    document.getElementById('files-panel')?.remove();
+    document.getElementById('preview-panel')?.remove();
+    if (!document.getElementById('git-panel')) {
+      const panel = document.createElement('div');
+      panel.id = 'git-panel';
+      panel.style.cssText = 'flex:1;overflow-y:auto;padding:16px;';
+      panel.innerHTML = '<div id="git-content">Loading...</div>';
+      document.querySelector('.main').appendChild(panel);
+      loadGitStatus();
+    }
   } else if (tab === 'preview') {
     content.style.display = 'none';
     document.getElementById('term-panel')?.remove();
     document.getElementById('files-panel')?.remove();
+    document.getElementById('git-panel')?.remove();
     if (!document.getElementById('preview-panel')) {
       const panel = document.createElement('div');
       panel.id = 'preview-panel';
@@ -491,6 +509,72 @@ function loadPreview() {
   if (!frame || !state.activeSession) return;
   const filePath = urlInput?.value || '/index.html';
   frame.src = `/api/sessions/${state.activeSession}/preview${filePath}`;
+}
+
+// ─── Git Panel ───────────────────────────────────────────
+async function loadGitStatus() {
+  const el = document.getElementById('git-content');
+  if (!el || !state.activeSession) return;
+  try {
+    const [status, diff] = await Promise.all([
+      api(`/api/sessions/${state.activeSession}/git/status`),
+      api(`/api/sessions/${state.activeSession}/git/diff`),
+    ]);
+    el.innerHTML = `
+      <div style="display:flex;gap:12px;margin-bottom:16px">
+        <div class="dash-card" style="flex:1;padding:12px">
+          <div style="color:var(--text-dim);font-size:12px">Branch</div>
+          <div style="font-family:var(--mono);font-size:14px;color:var(--green)">${escHtml(status.branch)}</div>
+        </div>
+        <div class="dash-card" style="flex:1;padding:12px">
+          <div style="color:var(--text-dim);font-size:12px">Status</div>
+          <div style="font-size:14px;color:${status.dirty?'var(--yellow)':'var(--green)'}">${status.dirty ? 'Dirty (uncommitted changes)' : 'Clean'}</div>
+        </div>
+      </div>
+      <div style="margin-bottom:16px">
+        <h3 style="font-size:14px;margin-bottom:8px">Recent Commits</h3>
+        <div style="background:var(--surface2);border-radius:6px;padding:8px 12px;font-family:var(--mono);font-size:12px;white-space:pre-wrap">${escHtml(status.log)}</div>
+      </div>
+      ${status.dirty ? `<div style="margin-bottom:16px">
+        <h3 style="font-size:14px;margin-bottom:8px">Uncommitted Changes</h3>
+        <div style="background:var(--surface2);border-radius:6px;padding:8px 12px;font-family:var(--mono);font-size:12px;white-space:pre-wrap">${escHtml(status.status)}</div>
+      </div>` : ''}
+      ${diff.diff ? `<div style="margin-bottom:16px">
+        <h3 style="font-size:14px;margin-bottom:8px">Diff</h3>
+        <pre style="background:var(--surface2);border-radius:6px;padding:8px 12px;font-family:var(--mono);font-size:11px;overflow-x:auto;max-height:300px;overflow-y:auto">${escHtml(diff.diff)}</pre>
+      </div>` : ''}
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="gitRefresh()">🔄 Refresh</button>
+        <button class="btn" onclick="gitCommit()">💾 Commit All</button>
+        <button class="btn btn-primary" onclick="gitCreatePR()">🔀 Create PR</button>
+      </div>
+    `;
+  } catch (err) {
+    el.innerHTML = `<p style="color:var(--text-dim)">Git not available in this session.</p>`;
+  }
+}
+
+function gitRefresh() { loadGitStatus(); }
+
+async function gitCommit() {
+  const msg = prompt('Commit message:');
+  if (!msg || !state.activeSession) return;
+  await api(`/api/sessions/${state.activeSession}/git/commit`, {
+    method: 'POST', body: JSON.stringify({ message: msg }),
+  });
+  loadGitStatus();
+}
+
+async function gitCreatePR() {
+  const title = prompt('PR title:');
+  if (!title || !state.activeSession) return;
+  const repo = prompt('Remote repo URL (leave empty for local only):') || '';
+  const result = await api(`/api/sessions/${state.activeSession}/pr`, {
+    method: 'POST', body: JSON.stringify({ title, repo }),
+  });
+  if (result.prUrl) alert('PR created: ' + result.prUrl);
+  else alert(result.message || 'Committed successfully');
+  loadGitStatus();
 }
 
 // ─── Init ────────────────────────────────────────────────
