@@ -938,7 +938,8 @@ function serveStatic(req, res, urlPath) {
 
 // ─── HTTP Server ─────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  const rawUrl = req.url === '//' ? '/' : req.url;
+  const url = new URL(rawUrl, `http://${req.headers.host}`);
   const urlPath = url.pathname;
   const method = req.method;
 
