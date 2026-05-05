@@ -21,6 +21,7 @@ export function saveSessions(sessions) {
     data[id] = {
       id: s.id, name: s.name, branch: s.branch, workDir: s.workDir,
       createdAt: s.createdAt, updatedAt: s.updatedAt,
+      createdBy: s.createdBy || "anon",
       agentRunning: false, // Never persist running state
       lastCommit: s.lastCommit, summary: s.summary,
       messages: s.messages.slice(-500), // Keep last 500 messages

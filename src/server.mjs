@@ -71,6 +71,7 @@ function createSession(name, userId) {
   const session = {
     id, name, branch, workDir,
     createdAt: now(), updatedAt: now(),
+    createdBy: userId || "anon",
     messages: [{
       id: uid(), sessionId: id, userId: "system", userName: "Ace",
       type: "system", content: `Session "${name}" created. Branch: ${branch}`,
@@ -90,6 +91,7 @@ function sessionToJSON(s) {
   return {
     id: s.id, name: s.name, branch: s.branch,
     createdAt: s.createdAt, updatedAt: s.updatedAt,
+    createdBy: s.createdBy || "anon",
     agentRunning: s.agentRunning, lastCommit: s.lastCommit,
     summary: s.summary, participantCount: s.participants.size,
     messageCount: s.messages.length, hasPlan: !!s.plan,
@@ -243,33 +245,74 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
 }
 
 // ─── Terminal ────────────────────────────────────────────
+const runningExecs = new Map(); // sessionId -> { proc, abortController }
+
 async function execInSession(sessionId, command, userId) {
   const session = sessions.get(sessionId);
   if (!session) return;
 
+  // Post "running" message to chat
+  const startMsg = {
+    id: uid(), sessionId, userId, userName: users.get(userId)?.name || "User",
+    type: "terminal", content: `$ ${command}\n⏳ Running...`, timestamp: now(),
+    metadata: { running: true },
+  };
+  session.messages.push(startMsg);
+  broadcastToSession(sessionId, { type: "message", message: startMsg });
+
   return new Promise((resolve) => {
-    execSync(command, {
+    const proc = spawn("bash", ["-c", command], {
       cwd: session.workDir,
-      timeout: 30000,
-      encoding: "utf8",
       env: { ...process.env },
+      stdio: ["ignore", "pipe", "pipe"],
     });
-    const output = execSync(command, { cwd: session.workDir, timeout: 30000, encoding: "utf8" }) || "(no output)";
-    const msg = {
-      id: uid(), sessionId, userId, userName: users.get(userId)?.name || "User",
-      type: "terminal", content: `$ ${command}\n${output}`, timestamp: now(),
-    };
-    session.messages.push(msg);
-    broadcastToSession(sessionId, { type: "message", message: msg });
-    resolve();
+
+    runningExecs.set(sessionId, { proc });
+
+    let stdout = "";
+    let stderr = "";
+
+    proc.stdout.on("data", (d) => { stdout += d.toString(); });
+    proc.stderr.on("data", (d) => { stderr += d.toString(); });
+
+    proc.on("close", (code) => {
+      runningExecs.delete(sessionId);
+      const output = stdout || "(no output)";
+      const errMsg = stderr ? `\n${stderr}` : "";
+      const doneMsg = {
+        id: uid(), sessionId, userId, userName: users.get(userId)?.name || "User",
+        type: "terminal",
+        content: `$ ${command}\n${output}${errMsg}${code !== 0 ? `\n(exit code: ${code})` : ""}`,
+        timestamp: now(),
+        metadata: { exitCode: code },
+      };
+      // Replace the "running" message
+      const idx = session.messages.findIndex(m => m.id === startMsg.id);
+      if (idx !== -1) session.messages[idx] = doneMsg;
+      else session.messages.push(doneMsg);
+      broadcastToSession(sessionId, { type: "message", message: doneMsg });
+      scheduleSave();
+      resolve();
+    });
   }).catch((err) => {
+    runningExecs.delete(sessionId);
     const msg = {
       id: uid(), sessionId, userId, userName: users.get(userId)?.name || "User",
-      type: "terminal", content: `$ ${command}\n${err.stdout || ""}\n${err.stderr || err.message}`, timestamp: now(),
+      type: "terminal", content: `$ ${command}\nError: ${err.message}`, timestamp: now(),
     };
     session.messages.push(msg);
     broadcastToSession(sessionId, { type: "message", message: msg });
   });
+}
+
+function abortExec(sessionId) {
+  const running = runningExecs.get(sessionId);
+  if (running && running.proc) {
+    running.proc.kill("SIGTERM");
+    runningExecs.delete(sessionId);
+    return true;
+  }
+  return false;
 }
 
 // ─── HTTP Router ─────────────────────────────────────────
@@ -332,8 +375,14 @@ async function handleAPI(req, res, urlPath, method) {
   if (execMatch && method === "POST") {
     const body = await parseBody(req);
     if (!body.command) return send(json({ error: "command required" }, 400));
-    await execInSession(execMatch[1], body.command, body.userId || "anon");
+    execInSession(execMatch[1], body.command, body.userId || "anon"); // async, no await
     return send(json({ ok: true }));
+  }
+
+  const execAbortMatch = urlPath.match(/^\/api\/sessions\/([^/]+)\/exec\/abort$/);
+  if (execAbortMatch && method === "POST") {
+    const aborted = abortExec(execAbortMatch[1]);
+    return send(json({ ok: aborted, message: aborted ? "Command aborted" : "No running command" }));
   }
 
   const messagesMatch = urlPath.match(/^\/api\/sessions\/([^/]+)\/messages$/);
@@ -620,7 +669,7 @@ wss.on("connection", (ws) => {
           if (/^do (this|it|the plan)$/i.test(agentPrompt) && session.plan) {
             agentPrompt = `Execute the following plan:\n\n${session.plan.content}\n\n${agentPrompt}`;
           }
-          const model = "opus";
+          const model = data.model || "opus";
           setTimeout(() => {
             spawnAgent(data.sessionId, agentPrompt, data.userId, model);
           }, 500);

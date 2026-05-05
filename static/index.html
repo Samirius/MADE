@@ -84,13 +84,30 @@ async function loadSessions() {
 
 function renderSessionList() {
   const el = document.getElementById('session-list');
-  el.innerHTML = state.sessions.map(s => `
-    <div class="session-item ${state.activeSession === s.id ? 'active' : ''}" onclick="openSession('${s.id}')">
+  const mySessions = state.sessions.filter(s => s.createdBy === state.userId);
+  const otherSessions = state.sessions.filter(s => s.createdBy !== state.userId);
+  
+  let html = '';
+  if (mySessions.length > 0) {
+    html += '<div style="color:var(--text-dim);font-size:11px;padding:4px 8px;margin-top:4px">My Sessions</div>';
+    html += mySessions.map(s => sessionItemHtml(s)).join('');
+  }
+  if (otherSessions.length > 0) {
+    html += '<div style="color:var(--text-dim);font-size:11px;padding:4px 8px;margin-top:8px;border-top:1px solid var(--border)">Other Sessions</div>';
+    html += otherSessions.map(s => sessionItemHtml(s)).join('');
+  }
+  if (mySessions.length === 0 && otherSessions.length === 0) {
+    html = '<div style="color:var(--text-dim);font-size:12px;padding:8px">No sessions yet</div>';
+  }
+  el.innerHTML = html;
+}
+
+function sessionItemHtml(s) {
+  return `<div class="session-item ${state.activeSession === s.id ? 'active' : ''}" onclick="openSession('${s.id}')">
       <div class="dot ${s.agentRunning ? 'running' : 'idle'}"></div>
       <span>${s.name}</span>
       <span class="count">${s.messageCount || 0}</span>
-    </div>
-  `).join('');
+    </div>`;
 }
 
 async function openSession(id) {
@@ -205,9 +222,10 @@ function sendChat() {
   }
 
   // Regular chat
+  const model = document.getElementById('model-select')?.value || 'opus';
   state.ws.send(JSON.stringify({
     type: 'chat', sessionId: state.activeSession, userId: state.userId,
-    userName: state.userName, content: text,
+    userName: state.userName, content: text, model,
   }));
   input.value = '';
   input.style.height = 'auto';
@@ -394,7 +412,7 @@ async function switchTab(tab) {
       const panel = document.createElement('div');
       panel.id = 'term-panel';
       panel.style.cssText = 'flex:1;display:flex;flex-direction:column;';
-      panel.innerHTML = '<div class="ace-term"><div class="term-bar"><span class="term-title">Terminal — ' + (state.activeSession || '') + '</span></div><div class="term-body" id="term-output"></div><div class="term-input-row"><span class="term-prompt">$</span><input class="term-input" id="term-input" autofocus></div></div>';
+      panel.innerHTML = '<div class="ace-term"><div class="term-bar"><span class="term-title">Terminal — ' + (state.activeSession || '') + '</span><button style="background:var(--red);color:white;border:none;padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer" onclick="abortExec()">Stop</button></div><div class="term-body" id="term-output"></div><div class="term-input-row"><span class="term-prompt">$</span><input class="term-input" id="term-input" autofocus></div></div>';
       document.querySelector('.main').appendChild(panel);
       connectTerminal();
     }
@@ -575,6 +593,11 @@ async function loadGitStatus() {
 }
 
 function gitRefresh() { loadGitStatus(); }
+
+async function abortExec() {
+  if (!state.activeSession) return;
+  await api(`/api/sessions/${state.activeSession}/exec/abort`, { method: 'POST' });
+}
 
 async function gitCommit() {
   const msg = prompt('Commit message:');
