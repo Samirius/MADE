@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ace Workspace</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+</head>
+<body>
+<div class="app" id="app">
+  <div class="sidebar">
+    <div class="logo"><span>⚡</span><div>Ace<small>Multiplayer Agent Workspace</small></div></div>
+    <div class="sidebar-section">
+      <h3>Dashboard</h3>
+      <div class="session-item active" onclick="showDashboard()" id="nav-dashboard">🏠 Home</div>
+    </div>
+    <div class="sidebar-section" style="flex:1;overflow-y:auto">
+      <h3>Sessions</h3>
+      <div id="session-list"></div>
+      <div class="new-session-btn" onclick="showNewSessionModal()">+ New Session</div>
+    </div>
+    <div class="sidebar-section" style="border-top:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 8px">
+        <div class="avatar" style="width:24px;height:24px;font-size:10px;background:var(--accent)">S</div>
+        <span style="font-size:12px" id="user-name">Setting up...</span>
+      </div>
+    </div>
+  </div>
+  <div class="main" id="main-content">
+    <!-- Dynamic content -->
+  </div>
+</div>
+<div class="modal-overlay" id="modal" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<script>
+let state = { sessions: [], activeSession: null, userId: null, userName: '', ws: null, messages: {}, dashboard: true };
+const API = '';
+
+async function api(path, opts = {}) {
+  const r = await fetch(API + path, { headers: {'Content-Type':'application/json',...opts.headers}, ...opts });
+  if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
+  return r.json();
+}
+
+function uid() { return Math.random().toString(36).slice(2, 10); }
+
+// ─── WebSocket ───────────────────────────────────────────
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  state.ws = new WebSocket(`${proto}://${location.host}/ws`);
+  state.ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'message') {
+      if (!state.messages[msg.message.sessionId]) state.messages[msg.message.sessionId] = [];
+      state.messages[msg.message.sessionId].push(msg.message);
+      if (state.activeSession === msg.message.sessionId && !state.dashboard) appendMessage(msg.message);
+    }
+    if (msg.type === 'session_created' || msg.type === 'session_updated' || msg.type === 'session_deleted') {
+      loadSessions();
+    }
+  };
+  state.ws.onclose = () => setTimeout(connectWS, 3000);
+}
+
+// ─── User Setup ──────────────────────────────────────────
+async function setupUser() {
+  const name = localStorage.getItem('ace_user_name') || prompt('Your name:') || 'User';
+  localStorage.setItem('ace_user_name', name);
+  state.userName = name;
+  const user = await api('/api/users', { method: 'POST', body: JSON.stringify({ name }) });
+  state.userId = user.id;
+  document.getElementById('user-name').textContent = name;
+}
+
+// ─── Sessions ────────────────────────────────────────────
+async function loadSessions() {
+  const data = await api('/api/sessions');
+  state.sessions = data.sessions;
+  renderSessionList();
+}
+
+function renderSessionList() {
+  const el = document.getElementById('session-list');
+  el.innerHTML = state.sessions.map(s => `
+    <div class="session-item ${state.activeSession === s.id ? 'active' : ''}" onclick="openSession('${s.id}')">
+      <div class="dot ${s.agentRunning ? 'running' : 'idle'}"></div>
+      <span>${s.name}</span>
+      <span class="count">${s.messageCount || 0}</span>
+    </div>
+  `).join('');
+}
+
+async function openSession(id) {
+  state.activeSession = id;
+  state.dashboard = false;
+  renderSessionList();
+
+  // Join WS
+  if (state.ws?.readyState === 1) {
+    state.ws.send(JSON.stringify({ type: 'join', sessionId: id, userId: state.userId, userName: state.userName }));
+  }
+
+  const data = await api(`/api/sessions/${id}`);
+  state.messages[id] = data.messages || [];
+
+  const main = document.getElementById('main-content');
+  const s = data;
+  main.innerHTML = `
+    <div class="session-header">
+      <h2>
+        # ${s.name}
+        <span class="branch">${s.branch}</span>
+        ${s.agentRunning ? '<span style="color:var(--green);font-size:12px">● Agent running</span>' : ''}
+      </h2>
+      <div class="header-actions">
+        <button class="btn" onclick="showTerminalModal()">⌨ Terminal</button>
+        <button class="btn btn-primary" onclick="promptAgent()">🤖 Agent</button>
+      </div>
+    </div>
+    ${s.summary ? `<div class="summary-block"><span class="label">Last:</span> ${s.summary}</div>` : ''}
+    <div class="chat-area" id="chat-area"></div>
+    <div class="input-area">
+      <div class="input-box">
+        <textarea id="chat-input" placeholder="Message this session, or type / to prompt the agent..." rows="1" 
+          oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'"
+          onkeydown="handleInputKey(event)"></textarea>
+        <div class="input-actions">
+          <select class="model-select" id="model-select">
+            <option value="opus">Opus</option>
+            <option value="sonnet">Sonnet</option>
+            <option value="haiku">Haiku</option>
+          </select>
+          <button class="send-btn" onclick="sendChat()" title="Send">▶</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Render messages
+  const chat = document.getElementById('chat-area');
+  state.messages[id].forEach(m => appendMessage(m, false));
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function appendMessage(m, scroll = true) {
+  const chat = document.getElementById('chat-area');
+  if (!chat) return;
+
+  const avatarEmoji = {
+    system: '⚡', agent: '🤖', terminal: '⌨',
+  }[m.type] || '👤';
+
+  const contentClass = {
+    agent_start: '', agent_stream: 'agent', agent_done: '',
+    terminal: 'terminal', system: 'system',
+  }[m.type] || '';
+
+  const time = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  const div = document.createElement('div');
+  div.className = 'message';
+  div.innerHTML = `
+    <div class="msg-avatar">${avatarEmoji}</div>
+    <div class="msg-body">
+      <div class="msg-header">
+        <span class="msg-name" style="color:${m.type.includes('agent') ? 'var(--accent2)' : m.type === 'system' ? 'var(--text-dim)' : 'var(--text)'}">${m.userName}</span>
+        <span class="msg-time">${time}</span>
+      </div>
+      <div class="msg-content ${contentClass}">${escHtml(m.content)}</div>
+    </div>
+  `;
+  chat.appendChild(div);
+  if (scroll) chat.scrollTop = chat.scrollHeight;
+}
+
+function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function handleInputKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+  if (e.key === '/' && e.target.value === '') { e.preventDefault(); promptAgent(); }
+}
+
+function sendChat() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text || !state.activeSession) return;
+
+  // If starts with /agent, prompt the agent
+  if (text.startsWith('/agent ')) {
+    const prompt = text.slice(7);
+    promptAgentWithText(prompt);
+    input.value = '';
+    input.style.height = 'auto';
+    return;
+  }
+
+  // Regular chat
+  state.ws.send(JSON.stringify({
+    type: 'chat', sessionId: state.activeSession, userId: state.userId,
+    userName: state.userName, content: text,
+  }));
+  input.value = '';
+  input.style.height = 'auto';
+}
+
+function promptAgent() {
+  document.getElementById('modal-content').innerHTML = `
+    <h2>🤖 Prompt Agent</h2>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:12px">The agent will read the full conversation as context.</p>
+    <div class="form-group">
+      <label>What should the agent do?</label>
+      <input type="text" id="agent-prompt" placeholder="Add a dark mode toggle to the navbar..." autofocus
+        onkeydown="if(event.key==='Enter')runAgent()">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="runAgent()">🚀 Run Agent</button>
+    </div>
+  `;
+  document.getElementById('modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('agent-prompt')?.focus(), 100);
+}
+
+function promptAgentWithText(prompt) {
+  const model = document.getElementById('model-select')?.value || 'opus';
+  api(`/api/sessions/${state.activeSession}/agent`, {
+    method: 'POST',
+    body: JSON.stringify({ prompt, userId: state.userId, model }),
+  });
+  closeModal();
+}
+
+function runAgent() {
+  const prompt = document.getElementById('agent-prompt')?.value;
+  if (!prompt) return;
+  promptAgentWithText(prompt);
+}
+
+function showTerminalModal() {
+  document.getElementById('modal-content').innerHTML = `
+    <h2>⌨ Run Command</h2>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:12px">Execute a command in the session workspace.</p>
+    <div class="form-group">
+      <label>Command</label>
+      <input type="text" id="term-cmd" placeholder="bun install && bun dev" autofocus
+        onkeydown="if(event.key==='Enter')runTermCmd()">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="runTermCmd()">Run</button>
+    </div>
+  `;
+  document.getElementById('modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('term-cmd')?.focus(), 100);
+}
+
+async function runTermCmd() {
+  const cmd = document.getElementById('term-cmd')?.value;
+  if (!cmd || !state.activeSession) return;
+  closeModal();
+  await api(`/api/sessions/${state.activeSession}/exec`, {
+    method: 'POST',
+    body: JSON.stringify({ command: cmd, userId: state.userId }),
+  });
+}
+
+function showNewSessionModal() {
+  document.getElementById('modal-content').innerHTML = `
+    <h2>+ New Session</h2>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:12px">Each session gets its own git branch and workspace.</p>
+    <div class="form-group">
+      <label>Session Name</label>
+      <input type="text" id="new-session-name" placeholder="feature/auth-flow" autofocus
+        onkeydown="if(event.key==='Enter')createSession()">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="createSession()">Create</button>
+    </div>
+  `;
+  document.getElementById('modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('new-session-name')?.focus(), 100);
+}
+
+async function createSession() {
+  const name = document.getElementById('new-session-name')?.value || 'New Session';
+  const session = await api('/api/sessions', {
+    method: 'POST',
+    body: JSON.stringify({ name, userId: state.userId }),
+  });
+  closeModal();
+  await loadSessions();
+  openSession(session.id);
+}
+
+function closeModal() { document.getElementById('modal').style.display = 'none'; }
+
+// ─── Dashboard ───────────────────────────────────────────
+function showDashboard() {
+  state.dashboard = true;
+  state.activeSession = null;
+  renderSessionList();
+
+  const main = document.getElementById('main-content');
+  main.innerHTML = `
+    <div class="dashboard">
+      <h1 style="font-size:22px;margin-bottom:20px">Welcome back, ${state.userName} 👋</h1>
+      <div class="dash-grid">
+        <div class="dash-card">
+          <h3>🔄 Pick Up Where You Left Off</h3>
+          <div id="pick-up-list"></div>
+        </div>
+        <div class="dash-card">
+          <h3>📊 Active Sessions</h3>
+          <div id="active-sessions"></div>
+        </div>
+        <div class="dash-card">
+          <h3>🚀 Quick Start</h3>
+          <div class="pick-up-item" onclick="showNewSessionModal()">
+            <div class="icon">➕</div>
+            <div class="info"><div class="name">New Session</div><div class="sub">Start a fresh workspace</div></div>
+          </div>
+          <div class="pick-up-item" onclick="openSessionIfExists()">
+            <div class="icon">📂</div>
+            <div class="info"><div class="name">Open Last Session</div><div class="sub">Continue where you stopped</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Fill pick-up
+  const pickup = document.getElementById('pick-up-list');
+  const recent = state.sessions.filter(s => s.lastCommit).slice(-3);
+  pickup.innerHTML = recent.length ? recent.map(s => `
+    <div class="pick-up-item" onclick="openSession('${s.id}')">
+      <div class="icon">📝</div>
+      <div class="info"><div class="name">${s.name}</div><div class="sub">${s.lastCommit || 'No commits yet'}</div></div>
+    </div>
+  `).join('') : '<p style="color:var(--text-dim);font-size:13px;padding:10px">No sessions yet. Create one to get started.</p>';
+
+  // Fill active
+  const active = document.getElementById('active-sessions');
+  active.innerHTML = state.sessions.length ? state.sessions.map(s => `
+    <div class="pick-up-item" onclick="openSession('${s.id}')">
+      <div class="dot ${s.agentRunning ? 'running' : 'idle'}" style="width:8px;height:8px"></div>
+      <div class="info"><div class="name"># ${s.name}</div><div class="sub">${s.messageCount || 0} messages · ${s.participantCount || 0} people</div></div>
+    </div>
+  `).join('') : '<p style="color:var(--text-dim);font-size:13px;padding:10px">No active sessions.</p>';
+}
+
+function openSessionIfExists() {
+  if (state.sessions.length > 0) openSession(state.sessions[state.sessions.length - 1].id);
+}
+
+// ─── Init ────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  await setupUser();
+  connectWS();
+  await loadSessions();
+  showDashboard();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeModal();
+});
+</script>
+</body>
+</html>

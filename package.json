@@ -1,0 +1,13 @@
+{
+  "name": "ace-workspace",
+  "version": "0.1.0",
+  "description": "Open-source multiplayer coding agent workspace",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.mjs",
+    "start": "node src/server.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.20.0"
+  }
+}
