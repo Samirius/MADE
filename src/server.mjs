@@ -76,6 +76,7 @@ function createSession(name, userId) {
       type: "system", content: `Session "${name}" created. Branch: ${branch}`,
       timestamp: now(),
     }],
+    plan: null, // Collaborative plan document
     participants: new Map(),
     agentRunning: false, agentPid: null,
     lastCommit: null, summary: "",
@@ -91,8 +92,43 @@ function sessionToJSON(s) {
     createdAt: s.createdAt, updatedAt: s.updatedAt,
     agentRunning: s.agentRunning, lastCommit: s.lastCommit,
     summary: s.summary, participantCount: s.participants.size,
-    messageCount: s.messages.length,
+    messageCount: s.messages.length, hasPlan: !!s.plan,
   };
+}
+
+// ─── Build conversation context for agent ────────────────
+function buildConversationPrompt(session, userPrompt) {
+  const lines = [];
+  lines.push(`# Ace Session: ${session.name}`);
+  lines.push(`Branch: ${session.branch}`);
+  lines.push("");
+  lines.push("## Conversation History");
+  
+  // Take last 50 messages for context window
+  const recent = session.messages.slice(-50);
+  for (const msg of recent) {
+    const time = new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    if (msg.type === "system") {
+      lines.push(`[${time}] [System] ${msg.content}`);
+    } else if (msg.type === "chat") {
+      lines.push(`[${time}] [${msg.userName}] ${msg.content}`);
+    } else if (msg.type === "agent_start") {
+      lines.push(`[${time}] [Agent Prompt] ${msg.content}`);
+    } else if (msg.type === "agent_done") {
+      lines.push(`[${time}] [Agent] ${msg.content}`);
+    } else if (msg.type === "terminal") {
+      lines.push(`[${time}] [Terminal] ${msg.content}`);
+    }
+    // Skip agent_stream to avoid noise
+  }
+
+  lines.push("");
+  lines.push("## Current Request");
+  lines.push(userPrompt);
+  lines.push("");
+  lines.push("You are in the Ace workspace. The project files are in the current directory. Make the changes requested above.");
+
+  return lines.join("\n");
 }
 
 // ─── Agent Execution ─────────────────────────────────────
@@ -111,6 +147,9 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
   session.messages.push(startMsg);
   broadcastToSession(sessionId, { type: "message", message: startMsg });
 
+  // Build full conversation as context
+  const fullPrompt = buildConversationPrompt(session, prompt);
+
   // Build agent command
   const modelFlags = {
     opus: "--model claude-opus-4-20250514",
@@ -118,17 +157,16 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
     haiku: "--model claude-haiku-4-20250514",
   };
   const modelFlag = modelFlags[model] || "";
-  const safePrompt = prompt.replace(/"/g, '\\"').replace(/`/g, "\\`");
 
   let cmd, args;
   if (AGENT_CMD === "claude") {
-    args = ["--dangerously-skip-permissions", ...modelFlag.split(" "), "-p", prompt, "--output-format", "stream-json"];
+    args = ["--dangerously-skip-permissions", ...modelFlag.split(" ").filter(Boolean), "-p", fullPrompt, "--output-format", "stream-json"];
     cmd = "claude";
   } else if (AGENT_CMD === "codex") {
-    args = ["--full-auto", prompt];
+    args = ["--full-auto", fullPrompt];
     cmd = "codex";
   } else if (AGENT_CMD === "opencode") {
-    args = ["-p", prompt];
+    args = ["-p", fullPrompt];
     cmd = "opencode";
   } else {
     args = ["-c", `${AGENT_CMD} ${modelFlag} "${safePrompt}"`];
@@ -453,6 +491,48 @@ async function handleAPI(req, res, urlPath, method) {
     }
   }
 
+  // ─── Plan API ──────────────────────────────────────────
+  const planMatch = urlPath.match(/^\/api\/sessions\/([^/]+)\/plan$/);
+  if (planMatch && method === "GET") {
+    const s = sessions.get(planMatch[1]);
+    if (!s) return send(json({ error: "Not found" }, 404));
+    return send(json({ plan: s.plan, hasPlan: !!s.plan }));
+  }
+  if (planMatch && method === "POST") {
+    const s = sessions.get(planMatch[1]);
+    if (!s) return send(json({ error: "Not found" }, 404));
+    const body = await parseBody(req);
+    s.plan = {
+      content: body.content || "",
+      updatedAt: now(),
+      updatedBy: body.userId || "anon",
+      title: body.title || "Plan",
+    };
+    scheduleSave();
+    broadcastToSession(planMatch[1], { type: "plan_updated", plan: s.plan });
+    return send(json({ ok: true, plan: s.plan }));
+  }
+  if (planMatch && method === "DELETE") {
+    const s = sessions.get(planMatch[1]);
+    if (!s) return send(json({ error: "Not found" }, 404));
+    s.plan = null;
+    scheduleSave();
+    broadcastToSession(planMatch[1], { type: "plan_updated", plan: null });
+    return send(json({ ok: true }));
+  }
+
+  // ─── @ace Generate Plan ────────────────────────────────
+  const genPlanMatch = urlPath.match(/^\/api\/sessions\/([^/]+)\/plan\/generate$/);
+  if (genPlanMatch && method === "POST") {
+    const s = sessions.get(genPlanMatch[1]);
+    if (!s) return send(json({ error: "Not found" }, 404));
+    const body = await parseBody(req);
+    // Use agent to generate a plan
+    const planPrompt = `Based on the following conversation, create a detailed implementation plan.\n\nConversation context:\n${buildConversationPrompt(s, body.prompt || "Create a plan for the current task")}\n\nOutput a clear, structured plan with numbered steps.`;
+    spawnAgent(genPlanMatch[1], planPrompt, body.userId || "anon", body.model || "opus");
+    return send(json({ ok: true, message: "Generating plan..." }));
+  }
+
   send(json({ error: "Not found" }, 404));
 }
 
@@ -503,7 +583,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 // ─── WebSocket Server ────────────────────────────────────
-const wss = new WebSocketServer({ server, path: "/ws" });
+const wss = new WebSocketServer({ noServer: true });
 
 wss.on("connection", (ws) => {
   ws.on("message", (raw) => {
@@ -530,6 +610,21 @@ wss.on("connection", (ws) => {
         session.messages.push(msg);
         broadcastToSession(data.sessionId, { type: "message", message: msg });
         scheduleSave();
+
+        // Detect @ace mention — trigger agent automatically
+        const content = data.content.trim();
+        const aceMatch = content.match(/^@ace\s+(.+)/i) || content.match(/^ace[\s,:]+(.+)/i);
+        if (aceMatch) {
+          let agentPrompt = aceMatch[1];
+          // If they say "do this" or "do it" and there's a plan, include the plan
+          if (/^do (this|it|the plan)$/i.test(agentPrompt) && session.plan) {
+            agentPrompt = `Execute the following plan:\n\n${session.plan.content}\n\n${agentPrompt}`;
+          }
+          const model = "opus";
+          setTimeout(() => {
+            spawnAgent(data.sessionId, agentPrompt, data.userId, model);
+          }, 500);
+        }
       }
 
       if (data.type === "agent_prompt") {

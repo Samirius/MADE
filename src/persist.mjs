@@ -24,6 +24,7 @@ export function saveSessions(sessions) {
       agentRunning: false, // Never persist running state
       lastCommit: s.lastCommit, summary: s.summary,
       messages: s.messages.slice(-500), // Keep last 500 messages
+      plan: s.plan || null,
     };
   }
   fs.writeFileSync(SESSIONS_FILE, JSON.stringify(data, null, 2));
