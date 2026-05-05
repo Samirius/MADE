@@ -16,7 +16,16 @@
       <div class="session-item active" onclick="showDashboard()" id="nav-dashboard">🏠 Home</div>
     </div>
     <div class="sidebar-section" style="flex:1;overflow-y:auto">
-      <h3>Sessions</h3>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <h3>Sessions</h3>
+        <select id="session-sort" onchange="renderSessionList()" style="background:var(--surface2);color:var(--text-dim);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px;cursor:pointer">
+          <option value="recent">Recent</option>
+          <option value="name">Name</option>
+          <option value="active">Active</option>
+        </select>
+      </div>
+      <input type="text" id="session-search" placeholder="Search sessions..." oninput="renderSessionList()"
+        style="width:100%;box-sizing:border-box;padding:6px 8px;margin:4px 0 8px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:12px;outline:none">
       <div id="session-list"></div>
       <div class="new-session-btn" onclick="showNewSessionModal()">+ New Session</div>
     </div>
@@ -58,6 +67,45 @@ function connectWS() {
       state.messages[msg.message.sessionId].push(msg.message);
       if (state.activeSession === msg.message.sessionId && !state.dashboard) appendMessage(msg.message);
     }
+    if (msg.type === 'message_edited') {
+      // Update in local cache
+      if (state.messages[msg.message.sessionId]) {
+        const idx = state.messages[msg.message.sessionId].findIndex(m => m.id === msg.message.id);
+        if (idx !== -1) state.messages[msg.message.sessionId][idx] = msg.message;
+      }
+      // Update DOM
+      if (state.activeSession === msg.message.sessionId) {
+        const contentEl = document.getElementById('msg-content-' + msg.message.id);
+        if (contentEl) contentEl.textContent = msg.message.content;
+        const msgEl = document.getElementById('msg-' + msg.message.id);
+        if (msgEl && !msgEl.querySelector('.edited-badge')) {
+          const timeEl = msgEl.querySelector('.msg-time');
+          if (timeEl) timeEl.insertAdjacentHTML('afterend', '<span class="edited-badge" style="color:var(--text-dim);font-size:10px;margin-left:4px">(edited)</span>');
+        }
+      }
+    }
+    if (msg.type === 'message_deleted') {
+      // Remove from local cache
+      if (state.activeSession) {
+        const idx = (state.messages[state.activeSession] || []).findIndex(m => m.id === msg.messageId);
+        if (idx !== -1) state.messages[state.activeSession].splice(idx, 1);
+      }
+      // Remove from DOM
+      const el = document.getElementById('msg-' + msg.messageId);
+      if (el) el.remove();
+    }
+    if (msg.type === 'plan_typing') {
+      const el = document.getElementById('plan-typing-indicator');
+      if (el) el.textContent = msg.userName + ' is editing...';
+      if (el) el.style.display = 'block';
+      clearTimeout(window._planTypingTimeout);
+      window._planTypingTimeout = setTimeout(() => { if (el) el.style.display = 'none'; }, 3000);
+    }
+    if (msg.type === 'plan_updated') {
+      // Refresh plan editor if open
+      const editor = document.getElementById('plan-editor');
+      if (editor && state.activeSession) loadPlan();
+    }
     if (msg.type === 'session_created' || msg.type === 'session_updated' || msg.type === 'session_deleted') {
       loadSessions();
     }
@@ -84,8 +132,27 @@ async function loadSessions() {
 
 function renderSessionList() {
   const el = document.getElementById('session-list');
-  const mySessions = state.sessions.filter(s => s.createdBy === state.userId);
-  const otherSessions = state.sessions.filter(s => s.createdBy !== state.userId);
+  const searchEl = document.getElementById('session-search');
+  const sortEl = document.getElementById('session-sort');
+  const query = (searchEl?.value || '').toLowerCase().trim();
+  const sortBy = sortEl?.value || 'recent';
+
+  let filtered = state.sessions;
+  if (query) {
+    filtered = filtered.filter(s => s.name.toLowerCase().includes(query));
+  }
+
+  // Sort
+  if (sortBy === 'name') {
+    filtered.sort((a, b) => a.name.localeCompare(b.name));
+  } else if (sortBy === 'active') {
+    filtered.sort((a, b) => (b.agentRunning ? 1 : 0) - (a.agentRunning ? 1 : 0));
+  } else {
+    filtered.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  }
+
+  const mySessions = filtered.filter(s => s.createdBy === state.userId);
+  const otherSessions = filtered.filter(s => s.createdBy !== state.userId);
   
   let html = '';
   if (mySessions.length > 0) {
@@ -97,7 +164,7 @@ function renderSessionList() {
     html += otherSessions.map(s => sessionItemHtml(s)).join('');
   }
   if (mySessions.length === 0 && otherSessions.length === 0) {
-    html = '<div style="color:var(--text-dim);font-size:12px;padding:8px">No sessions yet</div>';
+    html = `<div style="color:var(--text-dim);font-size:12px;padding:8px">${query ? 'No sessions match "' + escHtml(query) + '"' : 'No sessions yet'}</div>`;
   }
   el.innerHTML = html;
 }
@@ -173,6 +240,9 @@ function appendMessage(m, scroll = true) {
   const chat = document.getElementById('chat-area');
   if (!chat) return;
 
+  // Skip deleted messages
+  if (m.deleted) return;
+
   const avatarEmoji = {
     system: '⚡', agent: '🤖', terminal: '⌨',
   }[m.type] || '👤';
@@ -183,24 +253,98 @@ function appendMessage(m, scroll = true) {
   }[m.type] || '';
 
   const time = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const isOwn = m.userId === state.userId && m.type === 'chat';
+  const editedBadge = m.editedAt ? '<span style="color:var(--text-dim);font-size:10px;margin-left:4px">(edited)</span>' : '';
 
   const div = document.createElement('div');
   div.className = 'message';
+  div.id = 'msg-' + m.id;
   div.innerHTML = `
     <div class="msg-avatar">${avatarEmoji}</div>
     <div class="msg-body">
       <div class="msg-header">
-        <span class="msg-name" style="color:${m.type.includes('agent') ? 'var(--accent2)' : m.type === 'system' ? 'var(--text-dim)' : 'var(--text)'}">${m.userName}</span>
+        <span class="msg-name" style="color:${m.type.includes('agent') ? 'var(--accent2)' : m.type === 'system' ? 'var(--text-dim)' : 'var(--text)'}">${escHtml(m.userName)}</span>
         <span class="msg-time">${time}</span>
+        ${editedBadge}
+        ${isOwn ? `<span class="msg-actions" style="margin-left:8px;display:none">
+          <button onclick="editMessage('${m.id}')" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:11px;padding:0 4px" title="Edit">✏️</button>
+          <button onclick="deleteMessage('${m.id}')" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:11px;padding:0 4px" title="Delete">🗑</button>
+        </span>` : ''}
       </div>
-      <div class="msg-content ${contentClass}">${escHtml(m.content)}</div>
+      <div class="msg-content ${contentClass}" id="msg-content-${m.id}">${escHtml(m.content)}</div>
     </div>
   `;
+  // Show edit/delete on hover
+  if (isOwn) {
+    div.addEventListener('mouseenter', () => { const a = div.querySelector('.msg-actions'); if(a) a.style.display = 'inline'; });
+    div.addEventListener('mouseleave', () => { const a = div.querySelector('.msg-actions'); if(a) a.style.display = 'none'; });
+  }
   chat.appendChild(div);
   if (scroll) chat.scrollTop = chat.scrollHeight;
 }
 
 function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ─── Message Edit / Delete ───────────────────────────────
+async function editMessage(msgId) {
+  const msgEl = document.getElementById('msg-content-' + msgId);
+  if (!msgEl) return;
+  const currentText = msgEl.textContent;
+  // Build edit UI with DOM APIs to avoid XSS from innerHTML
+  msgEl.textContent = '';
+  const ta = document.createElement('textarea');
+  ta.id = 'edit-input-' + msgId;
+  ta.style.cssText = 'width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--accent);border-radius:4px;padding:6px;font-size:13px;font-family:var(--mono);resize:vertical;min-height:40px';
+  ta.value = currentText;
+  msgEl.appendChild(ta);
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'margin-top:4px;display:flex;gap:4px';
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Save';
+  saveBtn.style.cssText = 'font-size:11px;padding:2px 8px;background:var(--accent);color:white;border:none;border-radius:4px;cursor:pointer';
+  saveBtn.onclick = () => saveEdit(msgId);
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.cssText = 'font-size:11px;padding:2px 8px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer';
+  cancelBtn.onclick = () => cancelEdit(msgId, currentText);
+  btnRow.appendChild(saveBtn);
+  btnRow.appendChild(cancelBtn);
+  msgEl.appendChild(btnRow);
+  ta.focus();
+}
+
+async function saveEdit(msgId) {
+  const input = document.getElementById('edit-input-' + msgId);
+  if (!input || !state.activeSession) return;
+  const newContent = input.value.trim();
+  if (!newContent) return;
+  try {
+    await api(`/api/sessions/${state.activeSession}/messages/${msgId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ content: newContent, userId: state.userId }),
+    });
+  } catch (err) {
+    alert('Edit failed: ' + err.message);
+  }
+}
+
+async function deleteMessage(msgId) {
+  if (!confirm('Delete this message?') || !state.activeSession) return;
+  try {
+    await api(`/api/sessions/${state.activeSession}/messages/${msgId}?userId=${state.userId}`, {
+      method: 'DELETE',
+    });
+    const el = document.getElementById('msg-' + msgId);
+    if (el) el.remove();
+  } catch (err) {
+    alert('Delete failed: ' + err.message);
+  }
+}
+
+function cancelEdit(msgId, original) {
+  const msgEl = document.getElementById('msg-content-' + msgId);
+  if (msgEl) msgEl.textContent = original;
+}
 
 function handleInputKey(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
@@ -487,11 +631,23 @@ function connectTerminal() {
       if (msg.type === 'output') {
         const out = document.getElementById('term-output');
         if (out) {
+          // Strip ANSI escape codes for clean display
+          const clean = msg.data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '').replace(/\r/g, '');
           const line = document.createElement('div');
           line.className = 'term-line';
-          line.textContent = msg.data;
+          line.textContent = clean;
           out.appendChild(line);
           out.scrollTop = out.scrollHeight;
+        }
+      }
+      if (msg.type === 'exit') {
+        const out = document.getElementById('term-output');
+        if (out) {
+          const line = document.createElement('div');
+          line.className = 'term-line';
+          line.style.color = 'var(--text-dim)';
+          line.textContent = `\nProcess exited with code ${msg.exitCode}`;
+          out.appendChild(line);
         }
       }
     } catch {}
@@ -500,11 +656,24 @@ function connectTerminal() {
   if (input) {
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
-        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', data: input.value + '\n' }));
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', data: input.value + '\r' }));
         input.value = '';
+      }
+      // Send Ctrl+C on Ctrl+C
+      if (e.key === 'c' && e.ctrlKey) {
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', data: '\x03' }));
       }
     });
     input.focus();
+  }
+  // Send terminal resize to PTY
+  if (ws.readyState === 1) {
+    const termBody = document.getElementById('term-output');
+    if (termBody) {
+      const cols = Math.floor(termBody.clientWidth / 8) || 80;
+      const rows = Math.floor(termBody.clientHeight / 16) || 24;
+      ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+    }
   }
 }
 
@@ -628,6 +797,8 @@ async function loadPlan() {
   try {
     const data = await api(`/api/sessions/${state.activeSession}/plan`);
     const plan = data.plan;
+    if (plan) _planUpdatedAt = plan.updatedAt;
+    else _planUpdatedAt = null;
     el.innerHTML = `
       <div style="padding:16px;flex:1;display:flex;flex-direction:column">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -641,6 +812,7 @@ async function loadPlan() {
           Edit the plan below. Teammates can see and edit it too. 
           Then go back to chat and type <code style="background:var(--surface3);padding:2px 6px;border-radius:3px">@ace do this</code> to execute it.
         </div>
+        <div id="plan-typing-indicator" style="display:none;color:var(--accent);font-size:12px;margin-bottom:4px"></div>
         <textarea id="plan-editor" 
           style="flex:1;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px;font-family:var(--mono);font-size:13px;line-height:1.6;resize:none;outline:none"
           placeholder="# Implementation Plan\n\n1. First step...\n2. Second step...\n3. Third step...\n\n## Notes\n- Any additional context..."
@@ -662,19 +834,35 @@ function autoSavePlan() {
   if (planAutoSave) clearTimeout(planAutoSave);
   const statusEl = document.getElementById('plan-status');
   if (statusEl) statusEl.textContent = 'Editing...';
+  // Broadcast typing awareness
+  if (state.ws?.readyState === 1 && state.activeSession) {
+    state.ws.send(JSON.stringify({ type: 'plan_typing', sessionId: state.activeSession, userId: state.userId, userName: state.userName }));
+  }
   planAutoSave = setTimeout(() => savePlan(), 3000);
 }
 
+let _planUpdatedAt = null;
 async function savePlan() {
   const editor = document.getElementById('plan-editor');
   if (!editor || !state.activeSession) return;
   const content = editor.value;
-  await api(`/api/sessions/${state.activeSession}/plan`, {
-    method: 'POST',
-    body: JSON.stringify({ content, userId: state.userId, title: 'Plan' }),
-  });
-  const statusEl = document.getElementById('plan-status');
-  if (statusEl) statusEl.textContent = 'Saved ✓';
+  try {
+    const result = await api(`/api/sessions/${state.activeSession}/plan`, {
+      method: 'POST',
+      body: JSON.stringify({ content, userId: state.userId, title: 'Plan', updatedAt: _planUpdatedAt }),
+    });
+    _planUpdatedAt = result.plan?.updatedAt;
+    const statusEl = document.getElementById('plan-status');
+    if (statusEl) statusEl.textContent = 'Saved ✓';
+  } catch (err) {
+    const statusEl = document.getElementById('plan-status');
+    if (err.message && err.message.includes('409')) {
+      if (statusEl) statusEl.textContent = '⚠ Conflict! Someone else edited. Refreshing...';
+      setTimeout(() => loadPlan(), 1500);
+    } else {
+      if (statusEl) statusEl.textContent = 'Save failed: ' + err.message;
+    }
+  }
 }
 
 async function generatePlan() {
@@ -711,8 +899,7 @@ function promptForInput(msg) {
   return window.prompt(msg);
 }
 
-// Handle plan updates via WebSocket
-const origWsOnMessage = state.ws?.onmessage;
+// Handle plan updates via WebSocket — handled in connectWS onmessage
 
 // ─── Init ────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {

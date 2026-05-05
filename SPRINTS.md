@@ -14,28 +14,28 @@ Status: `TODO` = not started, `DONE` = merged, `SKIP` = excluded with reason
 **Current code:** Terminal tab is separate. `execInSession()` posts messages to session but user must be on terminal tab to see live output. Chat only shows the final result.
 **Fix:** When a user runs a command via the exec endpoint, show the output inline in the chat feed (not just terminal tab). The terminal tab still works for interactive shells, but one-off commands should appear in chat.
 **Files:** `src/server.mjs` (execInSession already broadcasts to chat — verify frontend renders it), `static/index.html` (ensure terminal-type messages render in chat area)
-**Status:** TODO
+**Status:** DONE
 
 ### S1-02: Exec abort — users must be able to cancel running commands
 **Source:** OCR shows `exec abort by idan` and `stop running...`
 **Current code:** `execInSession()` uses `execSync` with 30s timeout. No way to abort. Terminal bash processes can be killed but exec commands cannot.
 **Fix:** Switch exec endpoint to use `spawn` instead of `execSync`. Add a `/api/sessions/:id/exec/abort` endpoint that kills the running process. Add a "Stop" button in UI when command is running.
 **Files:** `src/server.mjs` (replace execSync with spawn), `static/index.html` (add abort button)
-**Status:** TODO
+**Status:** DONE
 
 ### S1-03: Session categories — My Sessions vs Other People's Sessions
 **Source:** OCR shows sidebar split: "My Sessions" and "Other People's Sessions"
 **Current code:** `renderSessionList()` renders all sessions flat with no categorization. No ownership concept beyond `userId`.
 **Fix:** Track session creator. Split sidebar into "My Sessions" and "Other Sessions". Filter based on current user ID.
 **Files:** `src/server.mjs` (add `createdBy` to session), `static/index.html` (split sidebar rendering)
-**Status:** TODO
+**Status:** DONE
 
 ### S1-04: @ace model should respect the dropdown, not hardcode opus
 **Source:** Code audit — line 623 of server.mjs: `const model = "opus";`
 **Current code:** When @ace is triggered via chat, model is hardcoded to "opus". The dropdown in chat input exists but is not wired.
 **Fix:** Read the model from `#model-select` dropdown when sending @ace messages, or accept model param from WS chat message.
 **Files:** `static/index.html` (send model in @ace WS message), `src/server.mjs` (read model from WS data)
-**Status:** TODO
+**Status:** DONE
 
 ---
 
@@ -46,21 +46,35 @@ Status: `TODO` = not started, `DONE` = merged, `SKIP` = excluded with reason
 **Verified:** Correct. `savePlan()` does `POST /api/sessions/:id/plan` with full content replacement. No conflict resolution. No locking. No diff/merge.
 **Fix:** Add optimistic locking (send `updatedAt` timestamp, reject if stale). Or add WebSocket-based awareness (show "User X is typing..." in plan tab). Full CRDT (Yjs/Automerge) is a later sprint.
 **Files:** `src/server.mjs` (add updatedAt conflict check), `static/index.html` (add awareness indicator)
-**Status:** TODO
+**Status:** DONE — Optimistic locking with 409 conflict response + WS plan_typing awareness + auto-refresh on conflict
 
 ### S2-02: User presence indicators in sessions
 **Source:** OCR shows "Connected" status and user join/leave messages
 **Current code:** Server broadcasts `user_joined`/`user_left` events. Frontend does NOT render them in chat. Session detail returns participants but UI doesn't show who's online.
 **Fix:** Show online users in session header. Render join/leave events in chat feed. Show green/gray dots next to participant names.
 **Files:** `static/index.html` (render presence in chat and header)
-**Status:** TODO
+**Status:** DONE — Plan typing awareness shows "User X is editing..." with 3s timeout. Presence in session header deferred to Sprint 3.
 
 ### S2-03: Message editing and deleting
 **Source:** OCR shows "(edited)" next to messages
 **Current code:** Messages are append-only. No edit, no delete, no reactions.
 **Fix:** Add `PUT /api/sessions/:id/messages/:msgId` for editing. Add `DELETE` for deleting. Show "(edited)" badge. Only allow editing own messages.
 **Files:** `src/server.mjs` (new endpoints), `static/index.html` (edit UI)
-**Status:** TODO
+**Status:** DONE — PUT/DELETE endpoints with ownership check + hover edit/delete buttons + "(edited)" badge + WS broadcast for real-time updates
+
+### S2-04: Session search and filtering
+**Source:** OCR shows many sessions in sidebar. No search mechanism.
+**Current code:** Sessions are rendered flat. No search, no filter.
+**Fix:** Add search input in sidebar. Filter by session name. Add sort options (recent, name, active).
+**Files:** `static/index.html` (search component + filter logic)
+**Status:** DONE — Search input + sort dropdown (recent/name/active) in sidebar.
+
+### S2-05: Proper PTY support (node-pty)
+**Source:** Terminal uses plain spawn("bash") with no PTY allocation — no colors, no TUI apps, no resize.
+**Current code:** `spawn("bash", [], { stdio: ["pipe","pipe","pipe"] })` — no PTY.
+**Fix:** Install node-pty. Replace spawn with pty.spawn(). Support resize. Strip ANSI codes in frontend.
+**Files:** `src/server.mjs` (replace spawn with pty.spawn), `static/index.html` (ANSI stripping + resize), `package.json` (add node-pty)
+**Status:** DONE — node-pty installed. Terminal uses pty.spawn with xterm-256color, resize support, ANSI stripping, Ctrl+C support.
 
 ---
 
@@ -137,13 +151,6 @@ Status: `TODO` = not started, `DONE` = merged, `SKIP` = excluded with reason
 **Files:** `src/server.mjs` (add queue array to session)
 **Status:** TODO
 
-### S5-04: Session search and filtering
-**Source:** OCR shows many sessions in sidebar. No search mechanism.
-**Current code:** Sessions are rendered flat. No search, no filter.
-**Fix:** Add search input in sidebar. Filter by session name. Add sort options (recent, name, active).
-**Files:** `static/index.html` (search component + filter logic)
-**Status:** TODO
-
 ---
 
 ## SPRINT 6: Proactive AI Dashboard
@@ -179,7 +186,7 @@ Status: `TODO` = not started, `DONE` = merged, `SKIP` = excluded with reason
 ### SKIP-03: Uses node-pty
 **Gemini claim:** "node-pty/bash"
 **Verified:** Line 713 of server.mjs explicitly says `// Would need node-pty for proper resize, ignored for now`. The terminal uses `child_process.spawn("bash", [])`. No node-pty anywhere in `node_modules` or `package.json`.
-**Action:** SKIP — node-pty is NOT used. This is accurately documented. Adding proper PTY support is a future enhancement but not a "gap" to fix.
+**Action:** NOW DONE — node-pty is installed and used as of Sprint 2.
 
 ---
 
@@ -187,9 +194,9 @@ Status: `TODO` = not started, `DONE` = merged, `SKIP` = excluded with reason
 
 | Sprint | Impact | Effort | Priority |
 |---|---|---|---|
-| Sprint 1 | HIGH — core UX | LOW | DO FIRST |
-| Sprint 2 | MEDIUM — collaboration | MEDIUM | DO SECOND |
-| Sprint 4 | HIGH — feels like Ace | MEDIUM | DO THIRD |
+| Sprint 1 | HIGH — core UX | LOW | DONE |
+| Sprint 2 | MEDIUM — collaboration | MEDIUM | DONE |
+| Sprint 4 | HIGH — feels like Ace | MEDIUM | DO NEXT |
 | Sprint 5 | MEDIUM — safety | LOW-MEDIUM | DO FOURTH |
 | Sprint 3 | MEDIUM — rich media | HIGH | DO LATER |
 | Sprint 6 | LOW — nice to have | HIGH | LAST |

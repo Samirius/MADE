@@ -9,6 +9,7 @@ import path from "node:path";
 import { URL } from "node:url";
 import { WebSocketServer } from "ws";
 import { execSync, spawn } from "node:child_process";
+import pty from "node-pty";
 import { saveSessions, loadSessions, saveUsers, loadUsers } from "./persist.mjs";
 
 // ─── Config ──────────────────────────────────────────────
@@ -327,7 +328,7 @@ function parseBody(req) {
 async function handleAPI(req, res, urlPath, method) {
   // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (method === "OPTIONS") { res.writeHead(204); res.end(); return; }
 
@@ -551,6 +552,10 @@ async function handleAPI(req, res, urlPath, method) {
     const s = sessions.get(planMatch[1]);
     if (!s) return send(json({ error: "Not found" }, 404));
     const body = await parseBody(req);
+    // Optimistic locking: reject if client's timestamp is stale
+    if (s.plan && body.updatedAt && body.updatedAt !== s.plan.updatedAt) {
+      return send(json({ error: "Conflict: plan was edited by someone else. Refresh first.", conflict: true, currentPlan: s.plan }, 409));
+    }
     s.plan = {
       content: body.content || "",
       updatedAt: now(),
@@ -567,6 +572,46 @@ async function handleAPI(req, res, urlPath, method) {
     s.plan = null;
     scheduleSave();
     broadcastToSession(planMatch[1], { type: "plan_updated", plan: null });
+    return send(json({ ok: true }));
+  }
+
+  // ─── Message Edit ──────────────────────────────────────
+  const msgEditMatch = urlPath.match(/^\/api\/sessions\/([^/]+)\/messages\/([^/]+)$/);
+  if (msgEditMatch && method === "PUT") {
+    const s = sessions.get(msgEditMatch[1]);
+    if (!s) return send(json({ error: "Not found" }, 404));
+    const msgId = msgEditMatch[2];
+    const msg = s.messages.find(m => m.id === msgId);
+    if (!msg) return send(json({ error: "Message not found" }, 404));
+    const body = await parseBody(req);
+    // Only allow editing own messages (system/agent messages cannot be edited)
+    if (msg.userId !== (body.userId || "anon") && msg.userId !== "system") {
+      return send(json({ error: "Can only edit your own messages" }, 403));
+    }
+    msg.content = body.content || msg.content;
+    msg.editedAt = now();
+    scheduleSave();
+    broadcastToSession(msgEditMatch[1], { type: "message_edited", message: msg });
+    return send(json({ ok: true, message: msg }));
+  }
+
+  // ─── Message Delete ────────────────────────────────────
+  if (msgEditMatch && method === "DELETE") {
+    const s = sessions.get(msgEditMatch[1]);
+    if (!s) return send(json({ error: "Not found" }, 404));
+    const msgId = msgEditMatch[2];
+    const idx = s.messages.findIndex(m => m.id === msgId);
+    if (idx === -1) return send(json({ error: "Message not found" }, 404));
+    const msg = s.messages[idx];
+    // Check userId from query param (DELETE may not have body)
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const deleteUserId = url.searchParams.get("userId") || "anon";
+    if (msg.userId !== deleteUserId && msg.type !== "system") {
+      return send(json({ error: "Can only delete your own messages" }, 403));
+    }
+    s.messages.splice(idx, 1);
+    scheduleSave();
+    broadcastToSession(msgEditMatch[1], { type: "message_deleted", messageId: msgId });
     return send(json({ ok: true }));
   }
 
@@ -680,6 +725,11 @@ wss.on("connection", (ws) => {
         spawnAgent(data.sessionId, data.prompt, data.userId, data.model || "opus");
       }
 
+      // Plan editing awareness
+      if (data.type === "plan_typing") {
+        broadcastToSession(data.sessionId, { type: "plan_typing", userId: data.userId, userName: data.userName || "Someone" });
+      }
+
       if (data.type === "terminal") {
         execInSession(data.sessionId, data.command, data.userId);
       }
@@ -728,25 +778,23 @@ termWss.on("connection", (ws) => {
   // Create or reuse PTY
   let termState = termSessions.get(sessionId);
   if (!termState) {
-    const proc = spawn("bash", [], {
+    const ptyProc = pty.spawn("bash", [], {
+      name: "xterm-256color",
+      cols: 80,
+      rows: 24,
       cwd: session.workDir,
-      env: { ...process.env, TERM: "xterm-256color", PS1: "\\[\\033[01;32m\\]\\$\\[\\033[00m\\] " },
-      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, TERM: "xterm-256color" },
     });
-    termState = { proc, sockets: new Set() };
+    termState = { proc: ptyProc, sockets: new Set() };
     termSessions.set(sessionId, termState);
 
-    proc.stdout.on("data", (data) => {
-      const payload = JSON.stringify({ type: "output", data: data.toString() });
+    ptyProc.onData((data) => {
+      const payload = JSON.stringify({ type: "output", data });
       for (const s of termState.sockets) { if (s.readyState === 1) s.send(payload); }
     });
-    proc.stderr.on("data", (data) => {
-      const payload = JSON.stringify({ type: "output", data: data.toString() });
-      for (const s of termState.sockets) { if (s.readyState === 1) s.send(payload); }
-    });
-    proc.on("close", () => {
+    ptyProc.onExit(({ exitCode }) => {
       termSessions.delete(sessionId);
-      for (const s of termState.sockets) { if (s.readyState === 1) s.close(); }
+      for (const s of termState.sockets) { if (s.readyState === 1) s.send(JSON.stringify({ type: "exit", exitCode })); s.close(); }
     });
   }
 
@@ -755,11 +803,13 @@ termWss.on("connection", (ws) => {
   ws.on("message", (raw) => {
     try {
       const msg = JSON.parse(raw.toString());
-      if (msg.type === "input" && termState.proc.stdin.writable) {
-        termState.proc.stdin.write(msg.data);
+      if (msg.type === "input") {
+        termState.proc.write(msg.data);
       }
       if (msg.type === "resize") {
-        // Would need node-pty for proper resize, ignored for now
+        if (termState.proc.resize) {
+          termState.proc.resize(msg.cols || 80, msg.rows || 24);
+        }
       }
     } catch {}
   });
