@@ -378,3 +378,124 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   padding: 1px 4px;
   border-radius: 3px;
 }
+
+/* ─── Sprint 6: Proactive Dashboard ──────────────────── */
+
+/* Team Pulse Stats Bar */
+.pulse-stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.pulse-stat {
+  flex: 1;
+  min-width: 100px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 20px;
+  text-align: center;
+  transition: border-color 0.2s;
+}
+.pulse-stat:hover {
+  border-color: var(--accent);
+}
+.pulse-stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+.pulse-stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+/* Insight Items */
+.insight-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  transition: background 0.15s;
+}
+.insight-item:hover {
+  background: var(--surface2);
+}
+.insight-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.insight-body {
+  flex: 1;
+  min-width: 0;
+}
+.insight-msg {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.4;
+}
+.insight-session {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+  font-family: var(--mono);
+}
+
+/* Insight type variants */
+.insight-active {
+  border-left: 3px solid var(--green);
+}
+.insight-recent {
+  border-left: 3px solid var(--blue);
+}
+.insight-stale {
+  border-left: 3px solid var(--yellow);
+}
+.insight-empty {
+  border-left: 3px solid var(--text-dim);
+}
+
+/* Activity Feed Items */
+.activity-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin-bottom: 2px;
+  transition: background 0.15s;
+}
+.activity-item:hover {
+  background: var(--surface2);
+}
+.activity-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.activity-body {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.activity-user {
+  font-weight: 600;
+  color: var(--text);
+  margin-right: 4px;
+}
+.activity-summary {
+  color: var(--text-dim);
+}
+.activity-time {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  flex-shrink: 0;
+}

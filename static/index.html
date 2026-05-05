@@ -919,38 +919,89 @@ async function createSession() {
 function closeModal() { document.getElementById('modal').style.display = 'none'; }
 
 // ─── Dashboard ───────────────────────────────────────────
-function showDashboard() {
+async function showDashboard() {
   state.dashboard = true;
   state.activeSession = null;
   renderSessionList();
 
   const main = document.getElementById('main-content');
   main.innerHTML = `
-    <div class="dashboard">
-      <h1 style="font-size:22px;margin-bottom:20px">Welcome back, ${state.userName} 👋</h1>
-      <div class="dash-grid">
-        <div class="dash-card">
-          <h3>🔄 Pick Up Where You Left Off</h3>
-          <div id="pick-up-list"></div>
+    <div class="dashboard" style="overflow-y:auto;height:100%">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <h1 style="font-size:22px">Welcome back, ${escHtml(state.userName)} 👋</h1>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="showNewSessionModal()">➕ New Session</button>
+          <button class="btn" onclick="loadActivityDashboard()">🔄 Refresh</button>
         </div>
-        <div class="dash-card">
-          <h3>📊 Active Sessions</h3>
-          <div id="active-sessions"></div>
+      </div>
+
+      <!-- Team Pulse Stats -->
+      <div class="pulse-stats" id="pulse-stats">
+        <div class="pulse-stat">
+          <div class="pulse-stat-value" id="stat-sessions">-</div>
+          <div class="pulse-stat-label">Sessions</div>
         </div>
+        <div class="pulse-stat">
+          <div class="pulse-stat-value" id="stat-agents" style="color:var(--green)">-</div>
+          <div class="pulse-stat-label">Agents Running</div>
+        </div>
+        <div class="pulse-stat">
+          <div class="pulse-stat-value" id="stat-messages">-</div>
+          <div class="pulse-stat-label">Messages</div>
+        </div>
+        <div class="pulse-stat">
+          <div class="pulse-stat-value" id="stat-commits">-</div>
+          <div class="pulse-stat-label">Commits</div>
+        </div>
+        <div class="pulse-stat">
+          <div class="pulse-stat-value" id="stat-team">-</div>
+          <div class="pulse-stat-label">Team</div>
+        </div>
+        <div class="pulse-stat">
+          <div class="pulse-stat-value" id="stat-activity" style="color:var(--accent)">-</div>
+          <div class="pulse-stat-label">Activity (24h)</div>
+        </div>
+      </div>
+
+      <!-- Insights + Activity Feed -->
+      <div class="dash-grid" style="grid-template-columns:1fr 1fr;margin-top:16px">
+        <!-- Left: Insights + Pick up -->
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <div class="dash-card">
+            <h3>💡 Team Pulse</h3>
+            <div id="insights-list"><span style="color:var(--text-dim);font-size:13px">Loading...</span></div>
+          </div>
+          <div class="dash-card">
+            <h3>🔄 Pick Up Where You Left Off</h3>
+            <div id="pick-up-list"></div>
+          </div>
+        </div>
+
+        <!-- Right: Activity Feed -->
+        <div class="dash-card" style="max-height:500px;display:flex;flex-direction:column">
+          <h3>📡 Activity Feed <span style="font-weight:400;color:var(--text-dim)">last 24h</span></h3>
+          <div id="activity-feed" style="flex:1;overflow-y:auto;margin-top:8px">
+            <span style="color:var(--text-dim);font-size:13px">Loading...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Start -->
+      <div style="margin-top:16px">
         <div class="dash-card">
           <h3>🚀 Quick Start</h3>
-          <div class="pick-up-item" onclick="showNewSessionModal()">
-            <div class="icon">➕</div>
-            <div class="info"><div class="name">New Session</div><div class="sub">Start a fresh workspace</div></div>
-          </div>
-          <div class="pick-up-item" onclick="openSessionIfExists()">
-            <div class="icon">📂</div>
-            <div class="info"><div class="name">Open Last Session</div><div class="sub">Continue where you stopped</div></div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
+            <button class="btn" onclick="showNewSessionModal()">➕ New Session</button>
+            <button class="btn" onclick="openSessionIfExists()">📂 Open Last Session</button>
+            <button class="btn" onclick="showNewSessionModal()" style="border-color:var(--accent)">🎯 Start from Template</button>
           </div>
         </div>
       </div>
     </div>
   `;
+
+  // Load activity data
+  await loadActivityDashboard();
 
   // Fill pick-up
   const pickup = document.getElementById('pick-up-list');
@@ -958,18 +1009,64 @@ function showDashboard() {
   pickup.innerHTML = recent.length ? recent.map(s => `
     <div class="pick-up-item" onclick="openSession('${s.id}')">
       <div class="icon">📝</div>
-      <div class="info"><div class="name">${s.name}</div><div class="sub">${s.lastCommit || 'No commits yet'}</div></div>
+      <div class="info"><div class="name">${escHtml(s.name)}</div><div class="sub">${escHtml(s.lastCommit || 'No commits yet')}</div></div>
     </div>
   `).join('') : '<p style="color:var(--text-dim);font-size:13px;padding:10px">No sessions yet. Create one to get started.</p>';
+}
 
-  // Fill active
-  const active = document.getElementById('active-sessions');
-  active.innerHTML = state.sessions.length ? state.sessions.map(s => `
-    <div class="pick-up-item" onclick="openSession('${s.id}')">
-      <div class="dot ${s.agentRunning ? 'running' : 'idle'}" style="width:8px;height:8px"></div>
-      <div class="info"><div class="name"># ${s.name}</div><div class="sub">${s.messageCount || 0} messages · ${s.participantCount || 0} people</div></div>
-    </div>
-  `).join('') : '<p style="color:var(--text-dim);font-size:13px;padding:10px">No active sessions.</p>';
+async function loadActivityDashboard() {
+  try {
+    const data = await api('/api/activity');
+
+    // Stats
+    const s = data.stats || {};
+    document.getElementById('stat-sessions').textContent = s.totalSessions || 0;
+    document.getElementById('stat-agents').textContent = s.activeAgents || 0;
+    document.getElementById('stat-messages').textContent = s.totalMessages || 0;
+    document.getElementById('stat-commits').textContent = s.totalCommits || 0;
+    document.getElementById('stat-team').textContent = s.teamSize || 0;
+    document.getElementById('stat-activity').textContent = s.activityLast24h || 0;
+
+    // Insights
+    const insightsEl = document.getElementById('insights-list');
+    const insights = data.insights || [];
+    if (insights.length === 0) {
+      insightsEl.innerHTML = '<p style="color:var(--text-dim);font-size:13px;padding:8px">No sessions yet. Create one to see insights.</p>';
+    } else {
+      insightsEl.innerHTML = insights.map(i => `
+        <div class="insight-item insight-${i.type}" onclick="openSession('${i.sessionId}')" style="cursor:pointer">
+          <span class="insight-icon">${i.icon}</span>
+          <div class="insight-body">
+            <div class="insight-msg">${escHtml(i.message)}</div>
+            <div class="insight-session"># ${escHtml(i.sessionName)}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Activity feed
+    const feedEl = document.getElementById('activity-feed');
+    const activity = data.activity || [];
+    if (activity.length === 0) {
+      feedEl.innerHTML = '<p style="color:var(--text-dim);font-size:13px;padding:8px">No activity in the last 24 hours.</p>';
+    } else {
+      feedEl.innerHTML = activity.map(a => {
+        const time = new Date(a.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return `<div class="activity-item" onclick="openSession('${a.sessionId}')" style="cursor:pointer">
+          <span class="activity-icon">${a.icon}</span>
+          <div class="activity-body">
+            <span class="activity-user">${escHtml(a.userName)}</span>
+            <span class="activity-summary">${escHtml(a.summary)}</span>
+          </div>
+          <span class="activity-time">${time}</span>
+        </div>`;
+      }).join('');
+    }
+  } catch (err) {
+    console.error('Failed to load activity:', err);
+    const feedEl = document.getElementById('activity-feed');
+    if (feedEl) feedEl.innerHTML = '<p style="color:var(--text-dim);font-size:13px">Could not load activity.</p>';
+  }
 }
 
 function openSessionIfExists() {

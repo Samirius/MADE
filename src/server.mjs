@@ -584,7 +584,11 @@ async function handleAPI(req, res, urlPath, method) {
       if (repo) {
         execSync(`git remote add origin ${repo} 2>/dev/null || true`, { cwd: s.workDir, stdio: "ignore" });
         execSync(`git push -u origin ${s.branch} 2>&1`, { cwd: s.workDir, encoding: "utf8" });
-        const prOut = execSync(`gh pr create --title ${JSON.stringify(title)} --body ${JSON.stringify(body.body || "Created by Ace Workspace")} --head ${s.branch}`, {
+        // Build PR body with session link
+        const host = req.headers.host || `localhost:${PORT}`;
+        const sessionUrl = `${req.headers['x-forwarded-proto'] || 'http'}://${host}/?session=${prMatch[1]}`;
+        const prBody = (body.body || "Created by Ace Workspace") + `\n\n---\n🔗 [Ace Workspace Session](${sessionUrl})`;
+        const prOut = execSync(`gh pr create --title ${JSON.stringify(title)} --body ${JSON.stringify(prBody)} --head ${s.branch}`, {
           cwd: s.workDir, encoding: "utf8",
         });
         return send(json({ ok: true, prUrl: prOut.trim() }));
@@ -789,6 +793,102 @@ async function handleAPI(req, res, urlPath, method) {
     res.writeHead(200, { "Content-Type": types[ext] || "application/octet-stream", "Cache-Control": "public, max-age=86400" });
     fs.createReadStream(filePath).pipe(res);
     return;
+  }
+
+  // ─── Activity Feed / Team Pulse ────────────────────────
+  if (urlPath === "/api/activity" && method === "GET") {
+    const allActivity = [];
+    const since = now() - 24 * 60 * 60 * 1000; // Last 24 hours
+
+    for (const [id, s] of sessions) {
+      // Session-level events
+      const sessionAge = now() - s.createdAt;
+      if (s.createdAt > since) {
+        allActivity.push({
+          type: "session_created", sessionId: id, sessionName: s.name,
+          userId: s.createdBy, userName: users.get(s.createdBy)?.name || "Someone",
+          timestamp: s.createdAt, icon: "🆕",
+          summary: `created session "${s.name}"`,
+        });
+      }
+
+      // Agent completions
+      const agentDones = s.messages.filter(m => m.type === "agent_done" && m.timestamp > since);
+      for (const m of agentDones) {
+        allActivity.push({
+          type: "agent_done", sessionId: id, sessionName: s.name,
+          userId: m.userId, userName: m.userName,
+          timestamp: m.timestamp, icon: "🤖",
+          summary: `agent finished in "${s.name}"`,
+        });
+      }
+
+      // Commits
+      const commits = s.messages.filter(m => m.type === "terminal" && m.content?.startsWith("$ git commit") && m.timestamp > since);
+      for (const m of commits) {
+        allActivity.push({
+          type: "commit", sessionId: id, sessionName: s.name,
+          userId: m.userId, userName: m.userName,
+          timestamp: m.timestamp, icon: "💾",
+          summary: `committed to "${s.name}"`,
+        });
+      }
+
+      // Image uploads
+      const uploads = s.messages.filter(m => m.type === "image" && m.timestamp > since);
+      for (const m of uploads) {
+        allActivity.push({
+          type: "upload", sessionId: id, sessionName: s.name,
+          userId: m.userId, userName: m.userName,
+          timestamp: m.timestamp, icon: "🖼",
+          summary: `shared a screenshot in "${s.name}"`,
+        });
+      }
+
+      // Plans created/updated
+      if (s.plan && s.plan.updatedAt > since) {
+        allActivity.push({
+          type: "plan_update", sessionId: id, sessionName: s.name,
+          userId: s.plan.updatedBy, userName: users.get(s.plan.updatedBy)?.name || "Someone",
+          timestamp: s.plan.updatedAt, icon: "📋",
+          summary: `updated plan in "${s.name}"`,
+        });
+      }
+    }
+
+    // Sort by timestamp, newest first
+    allActivity.sort((a, b) => b.timestamp - a.timestamp);
+
+    // Build team pulse stats
+    const stats = {
+      totalSessions: sessions.size,
+      activeAgents: Array.from(sessions.values()).filter(s => s.agentRunning).length,
+      totalMessages: Array.from(sessions.values()).reduce((sum, s) => sum + s.messages.length, 0),
+      totalCommits: Array.from(sessions.values()).filter(s => s.lastCommit).length,
+      teamSize: users.size,
+      activityLast24h: allActivity.length,
+    };
+
+    // Per-session insights (what's happening, what's stale)
+    const insights = [];
+    for (const [id, s] of sessions) {
+      const age = now() - s.updatedAt;
+      const hoursSinceUpdate = Math.floor(age / (1000 * 60 * 60));
+      const daysSinceUpdate = Math.floor(age / (1000 * 60 * 60 * 24));
+
+      if (s.agentRunning) {
+        insights.push({ sessionId: id, sessionName: s.name, type: "active", icon: "⚡", message: `Agent is running right now`, priority: 1 });
+      } else if (hoursSinceUpdate < 1) {
+        insights.push({ sessionId: id, sessionName: s.name, type: "recent", icon: "🕐", message: `Active less than an hour ago`, priority: 2 });
+      } else if (daysSinceUpdate >= 1 && s.lastCommit) {
+        insights.push({ sessionId: id, sessionName: s.name, type: "stale", icon: "💤", message: `Keep working on "${s.name}" — last update ${daysSinceUpdate}d ago`, priority: 3 });
+      } else if (!s.lastCommit && s.messages.length <= 1) {
+        insights.push({ sessionId: id, sessionName: s.name, type: "empty", icon: "🆕", message: `"${s.name}" was created but nothing happened yet`, priority: 4 });
+      }
+    }
+    insights.sort((a, b) => a.priority - b.priority);
+
+    return send(json({ activity: allActivity.slice(0, 50), stats, insights }));
   }
 
   send(json({ error: "Not found" }, 404));
