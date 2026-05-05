@@ -17,6 +17,8 @@ const PORT = parseInt(process.env.ACE_PORT || "3000");
 const HOST = process.env.ACE_HOST || "0.0.0.0";
 const PROJECT_DIR = process.env.ACE_PROJECT_DIR || process.cwd();
 const AGENT_CMD = process.env.ACE_AGENT_CMD || "claude";
+const AUTH_TOKEN = process.env.ACE_TOKEN || null; // If set (non-empty), all requests need ?token=X or Authorization header
+if (AUTH_TOKEN === "") { console.warn("⚠ ACE_TOKEN is empty string — auth disabled. Set a non-empty value to enable."); }
 
 // ─── State ───────────────────────────────────────────────
 const sessions = loadSessions();
@@ -96,6 +98,7 @@ function sessionToJSON(s) {
     agentRunning: s.agentRunning, lastCommit: s.lastCommit,
     summary: s.summary, participantCount: s.participants.size,
     messageCount: s.messages.length, hasPlan: !!s.plan,
+    queueLength: s.agentQueue?.length || 0,
   };
 }
 
@@ -137,7 +140,21 @@ function buildConversationPrompt(session, userPrompt) {
 // ─── Agent Execution ─────────────────────────────────────
 function spawnAgent(sessionId, prompt, userId, model = "opus") {
   const session = sessions.get(sessionId);
-  if (!session || session.agentRunning) return;
+  if (!session) return;
+
+  // If agent is already running, queue this request
+  if (session.agentRunning) {
+    if (!session.agentQueue) session.agentQueue = [];
+    session.agentQueue.push({ prompt, userId, model });
+    const queueMsg = {
+      id: uid(), sessionId, userId: "system", userName: "Ace",
+      type: "system", content: `Agent busy. Request queued (position: ${session.agentQueue.length})`,
+      timestamp: now(),
+    };
+    session.messages.push(queueMsg);
+    broadcastToSession(sessionId, { type: "message", message: queueMsg });
+    return;
+  }
 
   session.agentRunning = true;
   broadcastAll({ type: "session_updated", session: sessionToJSON(session) });
@@ -172,7 +189,7 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
     args = ["-p", fullPrompt];
     cmd = "opencode";
   } else {
-    args = ["-c", `${AGENT_CMD} ${modelFlag} "${safePrompt}"`];
+    args = ["-c", `${AGENT_CMD} ${modelFlag} "${fullPrompt}"`];
     cmd = "bash";
   }
 
@@ -233,6 +250,12 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
       } catch {}
 
       broadcastAll({ type: "session_updated", session: sessionToJSON(session) });
+
+      // Process next queued agent request
+      if (session.agentQueue && session.agentQueue.length > 0) {
+        const next = session.agentQueue.shift();
+        setTimeout(() => spawnAgent(sessionId, next.prompt, next.userId, next.model), 1000);
+      }
     });
   } catch (err) {
     const errMsg = {
@@ -242,6 +265,12 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
     session.messages.push(errMsg);
     broadcastToSession(sessionId, { type: "message", message: errMsg });
     session.agentRunning = false;
+    session.agentPid = null;
+    // Drain queue even on spawn error
+    if (session.agentQueue && session.agentQueue.length > 0) {
+      const next = session.agentQueue.shift();
+      setTimeout(() => spawnAgent(sessionId, next.prompt, next.userId, next.model), 1000);
+    }
   }
 }
 
@@ -251,6 +280,20 @@ const runningExecs = new Map(); // sessionId -> { proc, abortController }
 async function execInSession(sessionId, command, userId) {
   const session = sessions.get(sessionId);
   if (!session) return;
+
+  // Command safety check
+  const blocked = [/\brm\s+-rf\s+\//, /\bsudo\b/, /\bdd\s+if=/, />\s*\/dev\//];
+  for (const pattern of blocked) {
+    if (pattern.test(command)) {
+      const errMsg = {
+        id: uid(), sessionId, userId, userName: users.get(userId)?.name || "User",
+        type: "terminal", content: `$ ${command}\n⚠ Command blocked for safety.`, timestamp: now(),
+      };
+      session.messages.push(errMsg);
+      broadcastToSession(sessionId, { type: "message", message: errMsg });
+      return;
+    }
+  }
 
   // Post "running" message to chat
   const startMsg = {
@@ -329,8 +372,20 @@ async function handleAPI(req, res, urlPath, method) {
   // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
   if (method === "OPTIONS") { res.writeHead(204); res.end(); return; }
+
+  // Auth check
+  if (AUTH_TOKEN) {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const queryToken = url.searchParams.get("token");
+    const headerToken = (req.headers.authorization || "").replace("Bearer ", "");
+    if (queryToken !== AUTH_TOKEN && headerToken !== AUTH_TOKEN) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized. Set ACE_TOKEN or pass ?token=..." }));
+      return;
+    }
+  }
 
   const send = (r) => { res.writeHead(r.status, r.headers); res.end(r.body); };
 
@@ -757,6 +812,15 @@ const termSessions = new Map(); // sessionId -> { proc, sockets: Set }
 
 server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
+  // Auth check for WebSocket
+  if (AUTH_TOKEN) {
+    const queryToken = url.searchParams.get("token");
+    if (queryToken !== AUTH_TOKEN) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+  }
   if (url.pathname === "/ws") {
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
   } else if (url.pathname.startsWith("/term/")) {
