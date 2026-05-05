@@ -379,6 +379,207 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   border-radius: 3px;
 }
 
+/* ─── Feature A: Inline Split View (side-by-side preview) ─ */
+.split-container {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+.split-left {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+.split-right {
+  display: none;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+}
+.split-right.open {
+  display: flex;
+}
+.split-handle {
+  display: none;
+  width: 5px;
+  background: var(--border);
+  cursor: col-resize;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  z-index: 5;
+}
+.split-handle:hover,
+.split-handle.dragging {
+  background: var(--accent);
+}
+.split-preview-bar {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  gap: 6px;
+  flex-shrink: 0;
+}
+.split-preview-bar .preview-url {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  outline: none;
+  min-width: 0;
+}
+.split-preview-bar .preview-url:focus {
+  border-color: var(--accent);
+}
+.split-preview-frame {
+  flex: 1;
+  border: none;
+  background: white;
+  min-height: 0;
+}
+
+/* Preview toggle button active state */
+.btn.preview-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+/* ─── Feature B: Inline Diff Cards ────────────────────── */
+.diff-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 8px 0;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.diff-card:hover {
+  border-color: var(--accent);
+}
+.diff-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  user-select: none;
+}
+.diff-card-icon {
+  font-size: 14px;
+}
+.diff-card-summary {
+  font-weight: 600;
+  color: var(--text);
+}
+.diff-card-stats {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.diff-card-toggle {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-left: 8px;
+}
+.diff-card-files {
+  padding: 0 14px 8px 14px;
+  border-top: 1px solid var(--border);
+  display: none;
+}
+.diff-card.expanded .diff-card-files {
+  display: block;
+}
+.diff-card.expanded .diff-card-toggle::after {
+  content: '▲ collapse';
+}
+.diff-card:not(.expanded) .diff-card-toggle::after {
+  content: '▼ click to expand';
+}
+.diff-file-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.diff-file-name {
+  flex: 1;
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.diff-file-add {
+  color: var(--green);
+  font-weight: 600;
+  min-width: 40px;
+  text-align: right;
+}
+.diff-file-del {
+  color: var(--red);
+  font-weight: 600;
+  min-width: 40px;
+  text-align: right;
+}
+.diff-card-detail {
+  display: none;
+  border-top: 1px solid var(--border);
+  max-height: 400px;
+  overflow-y: auto;
+  background: var(--bg);
+  padding: 8px 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.diff-card.expanded .diff-card-detail {
+  display: block;
+}
+.diff-card-detail .diff-add {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--green);
+  padding: 1px 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.diff-card-detail .diff-remove {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--red);
+  padding: 1px 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.diff-card-detail .diff-hunk {
+  color: var(--text-dim);
+  background: rgba(96, 165, 250, 0.08);
+  padding: 2px 12px;
+  font-size: 11px;
+}
+.diff-card-detail .diff-header-line {
+  background: var(--surface3);
+  padding: 4px 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.diff-card-detail .diff-context {
+  color: var(--text-dim);
+  padding: 1px 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 /* ─── Sprint 6: Proactive Dashboard ──────────────────── */
 
 /* Team Pulse Stats Bar */

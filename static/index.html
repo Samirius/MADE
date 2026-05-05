@@ -66,6 +66,12 @@ function connectWS() {
       if (!state.messages[msg.message.sessionId]) state.messages[msg.message.sessionId] = [];
       state.messages[msg.message.sessionId].push(msg.message);
       if (state.activeSession === msg.message.sessionId && !state.dashboard) appendMessage(msg.message);
+      // Feature A: auto-refresh split preview on agent_done
+      if (msg.message.type === 'agent_done' && state.activeSession === msg.message.sessionId) {
+        if (splitOpen) setTimeout(() => refreshInlinePreview(), 1000);
+        // Feature B: fetch and render diff card after agent finishes
+        setTimeout(() => fetchAndRenderDiffCard(msg.message.sessionId), 2000);
+      }
     }
     if (msg.type === 'message_edited') {
       // Update in local cache
@@ -206,7 +212,7 @@ async function openSession(id) {
         <button class="btn ${getActiveTab()==='files'?'active':''}" onclick="switchTab('files')">📁 Files</button>
         <button class="btn ${getActiveTab()==='git'?'active':''}" onclick="switchTab('git')">🔀 Git</button>
         <button class="btn ${getActiveTab()==='plan'?'active':''}" onclick="switchTab('plan')">📋 Plan</button>
-        <button class="btn ${getActiveTab()==='preview'?'active':''}" onclick="switchTab('preview')">👁 Preview</button>
+        <button class="btn" onclick="toggleSplit()" id="btn-split-preview">👁 Preview</button>
         <button class="btn btn-primary" onclick="promptAgent()">🤖 Agent</button>
       </div>
     </div>
@@ -215,30 +221,45 @@ async function openSession(id) {
       <span id="summary-text" style="color:var(--text)">${s.summary ? escHtml(s.summary) : 'No activity yet'}</span>
       <span style="color:var(--text-dim);margin-left:auto">${s.messageCount || 0} messages · ${s.participantCount || 0} people</span>
     </div>
-    <div id="session-content" style="flex:1;display:flex;flex-direction:column;min-height:0">
-    <div class="chat-area" id="chat-area"></div>
-    <div class="input-area">
-      <div class="input-box" style="position:relative">
-        <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
-          <button class="mode-btn ${state.inputMode==='chat'?'active':''}" onclick="setInputMode('chat')" id="mode-chat">💬 Chat</button>
-          <button class="mode-btn ${state.inputMode==='ace'?'active':''}" onclick="setInputMode('ace')" id="mode-ace">✦ Ace</button>
-          <span style="color:var(--text-dim);font-size:10px;margin-left:4px">Tab to switch</span>
+    <div id="session-content" style="flex:1;display:flex;min-height:0">
+    <div id="split-container" class="split-container">
+      <div id="split-left" class="split-left" style="flex:1">
+        <div class="chat-area" id="chat-area"></div>
+        <div class="input-area">
+          <div class="input-box" style="position:relative">
+            <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
+              <button class="mode-btn ${state.inputMode==='chat'?'active':''}" onclick="setInputMode('chat')" id="mode-chat">💬 Chat</button>
+              <button class="mode-btn ${state.inputMode==='ace'?'active':''}" onclick="setInputMode('ace')" id="mode-ace">✦ Ace</button>
+              <span style="color:var(--text-dim);font-size:10px;margin-left:4px">Tab to switch</span>
+            </div>
+            <textarea id="chat-input" placeholder="${state.inputMode==='ace'?'Ask the agent anything...':'Message this session, or type @ace to prompt the agent...'}" rows="1" 
+              oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';handleAutocompleteInput(event)"
+              onkeydown="handleInputKey(event)"></textarea>
+            <div class="input-actions">
+              <button class="file-attach-btn" onclick="document.getElementById('file-upload-input').click()" title="Attach image">📎</button>
+              <input type="file" id="file-upload-input" accept="image/*" style="display:none" onchange="handleFileUpload(this)">
+              <select class="model-select" id="model-select">
+                <option value="opus">Opus</option>
+                <option value="sonnet">Sonnet</option>
+                <option value="haiku">Haiku</option>
+              </select>
+              <button class="send-btn" onclick="sendChat()" title="Send">▶</button>
+            </div>
+            <div id="autocomplete-dropdown" class="autocomplete-dropdown" style="display:none"></div>
+            <div id="upload-preview-area" style="display:none;padding:4px 0"></div>
+          </div>
         </div>
-        <textarea id="chat-input" placeholder="${state.inputMode==='ace'?'Ask the agent anything...':'Message this session, or type @ace to prompt the agent...'}" rows="1" 
-          oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';handleAutocompleteInput(event)"
-          onkeydown="handleInputKey(event)"></textarea>
-        <div class="input-actions">
-          <button class="file-attach-btn" onclick="document.getElementById('file-upload-input').click()" title="Attach image">📎</button>
-          <input type="file" id="file-upload-input" accept="image/*" style="display:none" onchange="handleFileUpload(this)">
-          <select class="model-select" id="model-select">
-            <option value="opus">Opus</option>
-            <option value="sonnet">Sonnet</option>
-            <option value="haiku">Haiku</option>
-          </select>
-          <button class="send-btn" onclick="sendChat()" title="Send">▶</button>
+      </div>
+      <div id="split-handle" class="split-handle"></div>
+      <div id="split-right" class="split-right">
+        <div class="split-preview-bar">
+          <span style="color:var(--text-dim);font-size:12px;white-space:nowrap">👁 Live</span>
+          <input class="preview-url" id="preview-url-inline" value="/index.html"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();refreshInlinePreview();}">
+          <button onclick="refreshInlinePreview()" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px" title="Refresh">🔄</button>
+          <button onclick="toggleSplit()" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px" title="Close preview">✕</button>
         </div>
-        <div id="autocomplete-dropdown" class="autocomplete-dropdown" style="display:none"></div>
-        <div id="upload-preview-area" style="display:none;padding:4px 0"></div>
+        <iframe id="preview-frame-inline" class="split-preview-frame"></iframe>
       </div>
     </div>
     </div>
@@ -922,6 +943,7 @@ function closeModal() { document.getElementById('modal').style.display = 'none';
 async function showDashboard() {
   state.dashboard = true;
   state.activeSession = null;
+  splitOpen = false;
   renderSessionList();
 
   const main = document.getElementById('main-content');
@@ -1081,7 +1103,7 @@ async function switchTab(tab) {
   // Re-render header buttons
   document.querySelectorAll('.header-actions .btn').forEach(b => b.classList.remove('active'));
   const btns = document.querySelectorAll('.header-actions .btn');
-  const tabMap = { chat: 0, terminal: 1, files: 2, git: 3, plan: 4, preview: 5 };
+  const tabMap = { chat: 0, terminal: 1, files: 2, git: 3, plan: 4 };
   if (tabMap[tab] !== undefined && btns[tabMap[tab]]) btns[tabMap[tab]].classList.add('active');
 
   const content = document.getElementById('session-content');
@@ -1094,6 +1116,14 @@ async function switchTab(tab) {
     document.getElementById('preview-panel')?.remove();
     document.getElementById('git-panel')?.remove();
     document.getElementById('plan-panel')?.remove();
+    // Restore split state if it was open
+    if (splitOpen) {
+      const right = document.getElementById('split-right');
+      const handle = document.getElementById('split-handle');
+      if (right) right.classList.add('open');
+      if (handle) handle.style.display = 'block';
+      updateSplitRatio();
+    }
   } else if (tab === 'terminal') {
     content.style.display = 'none';
     document.getElementById('files-panel')?.remove();
@@ -1192,7 +1222,9 @@ function connectTerminal() {
           if (portMatch) {
             const port = portMatch[1];
             const previewUrl = document.getElementById('preview-url');
+            const previewUrlInline = document.getElementById('preview-url-inline');
             if (previewUrl) previewUrl.value = `http://localhost:${port}`;
+            if (previewUrlInline) previewUrlInline.value = `http://localhost:${port}`;
             // Show notification
             showPortNotification(port);
           }
@@ -1468,7 +1500,7 @@ function showPortNotification(port) {
     notif.style.cssText = 'position:fixed;bottom:20px;right:20px;background:var(--surface2);border:1px solid var(--accent);border-radius:8px;padding:12px 16px;z-index:1000;font-size:13px;color:var(--text);box-shadow:0 4px 12px rgba(0,0,0,0.3);transition:opacity 0.3s';
     document.body.appendChild(notif);
   }
-  notif.innerHTML = `🔌 Dev server detected on port <strong style="color:var(--accent)">${port}</strong><br><button onclick="switchTab('preview');document.getElementById('port-notification').style.display='none'" style="margin-top:6px;padding:4px 12px;background:var(--accent);color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px">Open Preview</button>`;
+  notif.innerHTML = `🔌 Dev server detected on port <strong style="color:var(--accent)">${port}</strong><br><button onclick="toggleSplit();updatePortNotificationForSplit('${port}');document.getElementById('port-notification').style.display='none'" style="margin-top:6px;padding:4px 12px;background:var(--accent);color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px">Open Preview</button>`;
   notif.style.display = 'block';
   notif.style.opacity = '1';
   clearTimeout(window._portNotifTimeout);
@@ -1482,6 +1514,248 @@ function updateSessionSummary(sessionData) {
   if (summaryText && sessionData.summary) {
     summaryText.textContent = sessionData.summary;
   }
+}
+
+// ─── Feature A: Split View (side-by-side live preview) ────
+let splitOpen = false;
+let splitRatio = 0.6; // 60% chat, 40% preview
+
+function toggleSplit() {
+  splitOpen = !splitOpen;
+  const right = document.getElementById('split-right');
+  const handle = document.getElementById('split-handle');
+  const btn = document.getElementById('btn-split-preview');
+  if (!right || !handle) return;
+
+  if (splitOpen) {
+    right.classList.add('open');
+    handle.style.display = 'block';
+    if (btn) btn.classList.add('preview-active');
+    refreshInlinePreview();
+  } else {
+    right.classList.remove('open');
+    handle.style.display = 'none';
+    if (btn) btn.classList.remove('preview-active');
+  }
+  updateSplitRatio();
+}
+
+function updateSplitRatio() {
+  const left = document.getElementById('split-left');
+  const right = document.getElementById('split-right');
+  if (left) left.style.flex = splitRatio;
+  if (right) right.style.flex = 1 - splitRatio;
+}
+
+function refreshInlinePreview() {
+  const frame = document.getElementById('preview-frame-inline');
+  const urlInput = document.getElementById('preview-url-inline');
+  if (!frame || !state.activeSession) return;
+  const filePath = urlInput?.value || '/index.html';
+  frame.src = `/api/sessions/${state.activeSession}/preview${filePath}`;
+}
+
+// Drag handle for resizing split
+(function initSplitDrag() {
+  let dragging = false;
+  let startX = 0;
+  let startRatio = 0;
+
+  document.addEventListener('mousedown', (e) => {
+    const handle = document.getElementById('split-handle');
+    if (!handle || e.target !== handle) return;
+    dragging = true;
+    startX = e.clientX;
+    startRatio = splitRatio;
+    handle.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const container = document.getElementById('split-container');
+    if (!container) return;
+    const totalWidth = container.clientWidth;
+    const dx = e.clientX - startX;
+    const newRatio = startRatio + dx / totalWidth;
+    splitRatio = Math.min(0.85, Math.max(0.2, newRatio));
+    updateSplitRatio();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    const handle = document.getElementById('split-handle');
+    if (handle) handle.classList.remove('dragging');
+  });
+})();
+
+// Update port notification to use inline split instead of tab
+function updatePortNotificationForSplit(port) {
+  const urlInput = document.getElementById('preview-url-inline');
+  if (urlInput) {
+    urlInput.value = `http://localhost:${port}`;
+  }
+  if (splitOpen) {
+    refreshInlinePreview();
+  }
+}
+
+// ─── Feature B: Inline Diff Cards ────────────────────────
+async function fetchAndRenderDiffCard(sessionId) {
+  try {
+    const data = await api(`/api/sessions/${sessionId}/git/diff`);
+    if (!data.diff || data.diff.trim() === '') return; // no changes
+
+    const parsed = parseGitDiff(data.diff);
+    if (parsed.files.length === 0) return;
+
+    const chat = document.getElementById('chat-area');
+    if (!chat) return;
+
+    const card = document.createElement('div');
+    card.className = 'diff-card';
+    card.onclick = function(e) {
+      // Don't toggle if clicking inside the detail scroll area
+      if (e.target.closest('.diff-card-detail')) return;
+      this.classList.toggle('expanded');
+    };
+
+    // Summary header
+    const header = document.createElement('div');
+    header.className = 'diff-card-header';
+
+    const icon = document.createElement('span');
+    icon.className = 'diff-card-icon';
+    icon.textContent = '📝';
+
+    const summary = document.createElement('span');
+    summary.className = 'diff-card-summary';
+    summary.textContent = `${parsed.files.length} file${parsed.files.length !== 1 ? 's' : ''} changed`;
+
+    const stats = document.createElement('span');
+    stats.className = 'diff-card-stats';
+    const addSpan = document.createElement('span');
+    addSpan.style.color = 'var(--green)';
+    addSpan.textContent = `+${parsed.totalAdd}`;
+    const delSpan = document.createElement('span');
+    delSpan.style.color = 'var(--red)';
+    delSpan.textContent = ` -${parsed.totalDel}`;
+    stats.appendChild(addSpan);
+    stats.appendChild(delSpan);
+
+    const toggle = document.createElement('span');
+    toggle.className = 'diff-card-toggle';
+
+    header.appendChild(icon);
+    header.appendChild(summary);
+    header.appendChild(stats);
+    header.appendChild(toggle);
+    card.appendChild(header);
+
+    // File list
+    const filesDiv = document.createElement('div');
+    filesDiv.className = 'diff-card-files';
+    for (const f of parsed.files) {
+      const line = document.createElement('div');
+      line.className = 'diff-file-line';
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'diff-file-name';
+      nameSpan.textContent = '📄 ' + f.name;
+
+      const addS = document.createElement('span');
+      addS.className = 'diff-file-add';
+      addS.textContent = '+' + f.adds;
+
+      const delS = document.createElement('span');
+      delS.className = 'diff-file-del';
+      delS.textContent = '-' + f.dels;
+
+      line.appendChild(nameSpan);
+      line.appendChild(addS);
+      line.appendChild(delS);
+      filesDiv.appendChild(line);
+    }
+    card.appendChild(filesDiv);
+
+    // Full diff detail
+    const detail = document.createElement('div');
+    detail.className = 'diff-card-detail';
+    const diffLines = data.diff.split('\n');
+    for (const rawLine of diffLines) {
+      const el = document.createElement('div');
+      if (rawLine.startsWith('diff --git') || rawLine.startsWith('--- ') || rawLine.startsWith('+++ ')) {
+        el.className = 'diff-header-line';
+      } else if (rawLine.startsWith('@@')) {
+        el.className = 'diff-hunk';
+      } else if (rawLine.startsWith('+')) {
+        el.className = 'diff-add';
+      } else if (rawLine.startsWith('-')) {
+        el.className = 'diff-remove';
+      } else {
+        el.className = 'diff-context';
+      }
+      el.textContent = rawLine;
+      detail.appendChild(el);
+    }
+    card.appendChild(detail);
+
+    // Add a wrapper message for the diff card
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message';
+    wrapper.innerHTML = `
+      <div class="msg-avatar">📝</div>
+      <div class="msg-body">
+        <div class="msg-header">
+          <span class="msg-name" style="color:var(--text-dim)">Changes</span>
+          <span class="msg-time">${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+      </div>
+    `;
+    const msgBody = wrapper.querySelector('.msg-body');
+    msgBody.appendChild(card);
+    chat.appendChild(wrapper);
+    chat.scrollTop = chat.scrollHeight;
+  } catch (err) {
+    console.warn('Failed to fetch diff card:', err);
+  }
+}
+
+function parseGitDiff(diffText) {
+  const files = [];
+  let totalAdd = 0;
+  let totalDel = 0;
+  let currentFile = null;
+  let currentAdds = 0;
+  let currentDels = 0;
+
+  const lines = diffText.split('\n');
+  for (const line of lines) {
+    // Detect file name from +++ b/filename lines
+    const fileMatch = line.match(/^\+\+\+ b\/(.+)$/);
+    if (fileMatch) {
+      if (currentFile) {
+        files.push({ name: currentFile, adds: currentAdds, dels: currentDels });
+      }
+      currentFile = fileMatch[1];
+      currentAdds = 0;
+      currentDels = 0;
+      continue;
+    }
+    // Count adds/dels (skip +++ and --- lines)
+    if (line.startsWith('+') && !line.startsWith('+++')) {
+      currentAdds++;
+      totalAdd++;
+    } else if (line.startsWith('-') && !line.startsWith('---')) {
+      currentDels++;
+      totalDel++;
+    }
+  }
+  if (currentFile) {
+    files.push({ name: currentFile, adds: currentAdds, dels: currentDels });
+  }
+  return { files, totalAdd, totalDel };
 }
 
 // ─── Init ────────────────────────────────────────────────
