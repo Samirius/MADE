@@ -1,0 +1,16 @@
+services:
+  ace:
+    build: .
+    ports:
+      - "${ACE_PORT:-3000}:3000"
+    volumes:
+      - ace-data:/app/.sessions
+    environment:
+      - ACE_PORT=3000
+      - ACE_HOST=0.0.0.0
+      - ACE_PROJECT_DIR=/app
+      - ACE_AGENT_CMD=${ACE_AGENT_CMD:-claude}
+    restart: unless-stopped
+
+volumes:
+  ace-data:

@@ -296,6 +296,63 @@ async function handleAPI(req, res, urlPath, method) {
     return send(json({ users: Array.from(users.values()) }));
   }
 
+  // ─── File Browser ──────────────────────────────────────
+  const filesMatch = urlPath.match(/^\/api\/sessions\/([^/]+)\/files(.*)$/);
+  if (filesMatch && method === "GET") {
+    const s = sessions.get(filesMatch[1]);
+    if (!s) return send(json({ error: "Not found" }, 404));
+    const relPath = filesMatch[2] || "/";
+    const absPath = path.join(s.workDir, relPath === "/" ? "" : relPath);
+    // Security: prevent path traversal
+    if (!absPath.startsWith(s.workDir)) return send(json({ error: "Forbidden" }, 403));
+    if (!fs.existsSync(absPath)) return send(json({ error: "Not found" }, 404));
+    const stat = fs.statSync(absPath);
+    if (stat.isDirectory()) {
+      const entries = fs.readdirSync(absPath).map(name => {
+        const p = path.join(absPath, name);
+        const st = fs.statSync(p);
+        return { name, type: st.isDirectory() ? "dir" : "file", size: st.size, modified: st.mtimeMs };
+      });
+      return send(json({ path: relPath, entries }));
+    } else {
+      const ext = path.extname(absPath);
+      const types = { ".js": "text/javascript", ".ts": "text/typescript", ".json": "application/json", ".md": "text/markdown", ".html": "text/html", ".css": "text/css", ".py": "text/x-python", ".rs": "text/rust", ".go": "text/go", ".txt": "text/plain" };
+      res.writeHead(200, { "Content-Type": types[ext] || "application/octet-stream" });
+      fs.createReadStream(absPath).pipe(res);
+      return;
+    }
+  }
+
+  // ─── File Write ────────────────────────────────────────
+  const fileWriteMatch = urlPath.match(/^\/api\/sessions\/([^/]+)\/files(.*)$/);
+  if (fileWriteMatch && method === "PUT") {
+    const s = sessions.get(fileWriteMatch[1]);
+    if (!s) return send(json({ error: "Not found" }, 404));
+    const relPath = fileWriteMatch[2];
+    const absPath = path.join(s.workDir, relPath);
+    if (!absPath.startsWith(s.workDir)) return send(json({ error: "Forbidden" }, 403));
+    const body = await parseBody(req);
+    fs.mkdirSync(path.dirname(absPath), { recursive: true });
+    fs.writeFileSync(absPath, body.content || "");
+    return send(json({ ok: true, path: relPath }));
+  }
+
+  // ─── Live Preview Proxy ────────────────────────────────
+  const previewMatch = urlPath.match(/^\/api\/sessions\/([^/]+)\/preview(.*)$/);
+  if (previewMatch && method === "GET") {
+    const s = sessions.get(previewMatch[1]);
+    if (!s) return send(json({ error: "Not found" }, 404));
+    const relPath = previewMatch[2] || "/index.html";
+    const absPath = path.join(s.workDir, relPath);
+    if (!absPath.startsWith(s.workDir)) return send(json({ error: "Forbidden" }, 403));
+    if (!fs.existsSync(absPath)) return send(json({ error: "Preview file not found. Build your project first." }, 404));
+    const ext = path.extname(absPath);
+    const types = { ".html": "text/html", ".css": "text/css", ".js": "application/javascript", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".ico": "image/x-icon", ".woff": "font/woff", ".woff2": "font/woff2" };
+    res.writeHead(200, { "Content-Type": types[ext] || "application/octet-stream" });
+    fs.createReadStream(absPath).pipe(res);
+    return;
+  }
+
   send(json({ error: "Not found" }, 404));
 }
 
@@ -395,6 +452,78 @@ wss.on("connection", (ws) => {
         broadcastToSession(info.sessionId, { type: "user_left", userId: info.userId });
       }
       wsClients.delete(ws);
+    }
+  });
+});
+
+// ─── Terminal WebSocket Server ───────────────────────────
+const termWss = new WebSocketServer({ noServer: true });
+const termSessions = new Map(); // sessionId -> { proc, sockets: Set }
+
+server.on("upgrade", (req, socket, head) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.pathname === "/ws") {
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+  } else if (url.pathname.startsWith("/term/")) {
+    termWss.handleUpgrade(req, socket, head, (ws) => {
+      const sessionId = url.pathname.replace("/term/", "");
+      ws.sessionId = sessionId;
+      termWss.emit("connection", ws, req);
+    });
+  } else {
+    socket.destroy();
+  }
+});
+
+termWss.on("connection", (ws) => {
+  const sessionId = ws.sessionId;
+  const session = sessions.get(sessionId);
+  if (!session) { ws.close(); return; }
+
+  // Create or reuse PTY
+  let termState = termSessions.get(sessionId);
+  if (!termState) {
+    const proc = spawn("bash", [], {
+      cwd: session.workDir,
+      env: { ...process.env, TERM: "xterm-256color", PS1: "\\[\\033[01;32m\\]\\$\\[\\033[00m\\] " },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    termState = { proc, sockets: new Set() };
+    termSessions.set(sessionId, termState);
+
+    proc.stdout.on("data", (data) => {
+      const payload = JSON.stringify({ type: "output", data: data.toString() });
+      for (const s of termState.sockets) { if (s.readyState === 1) s.send(payload); }
+    });
+    proc.stderr.on("data", (data) => {
+      const payload = JSON.stringify({ type: "output", data: data.toString() });
+      for (const s of termState.sockets) { if (s.readyState === 1) s.send(payload); }
+    });
+    proc.on("close", () => {
+      termSessions.delete(sessionId);
+      for (const s of termState.sockets) { if (s.readyState === 1) s.close(); }
+    });
+  }
+
+  termState.sockets.add(ws);
+
+  ws.on("message", (raw) => {
+    try {
+      const msg = JSON.parse(raw.toString());
+      if (msg.type === "input" && termState.proc.stdin.writable) {
+        termState.proc.stdin.write(msg.data);
+      }
+      if (msg.type === "resize") {
+        // Would need node-pty for proper resize, ignored for now
+      }
+    } catch {}
+  });
+
+  ws.on("close", () => {
+    termState.sockets.delete(ws);
+    if (termState.sockets.size === 0) {
+      termState.proc.kill();
+      termSessions.delete(sessionId);
     }
   });
 });
