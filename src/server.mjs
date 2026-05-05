@@ -192,20 +192,28 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
   } else if (AGENT_CMD === "glm") {
     const glmModel = model === "haiku" ? "--model glm-4-flash" : "--model glm-5.1";
     const scriptPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'made-glm-agent.py');
-    args = [glmModel, fullPrompt];
+    args = [glmModel];
     cmd = scriptPath;
   } else {
     args = ["-c", `${AGENT_CMD} ${modelFlag} "${fullPrompt}"`];
     cmd = "bash";
   }
 
+  // GLM agent reads prompt from stdin; others read from args
+  const useStdin = AGENT_CMD === "glm";
+
   try {
     const proc = spawn(cmd, args, {
       cwd: session.workDir,
       env: { ...process.env },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [useStdin ? "pipe" : "ignore", "pipe", "pipe"],
     });
     session.agentPid = proc.pid;
+
+    if (useStdin) {
+      proc.stdin.write(fullPrompt);
+      proc.stdin.end();
+    }
 
     let buffer = "";
     proc.stdout.on("data", (chunk) => {

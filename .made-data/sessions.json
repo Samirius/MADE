@@ -28,6 +28,15 @@
         "type": "chat",
         "content": "hello",
         "timestamp": 1778008985773
+      },
+      {
+        "id": "ib1omw6x",
+        "sessionId": "8pt73gao",
+        "userId": "pl0fr3xz",
+        "userName": "Samir",
+        "type": "chat",
+        "content": "hello",
+        "timestamp": 1778009925653
       }
     ],
     "plan": null
