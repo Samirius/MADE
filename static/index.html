@@ -45,7 +45,7 @@
 </div>
 
 <script>
-let state = { sessions: [], activeSession: null, userId: null, userName: '', ws: null, messages: {}, dashboard: true, activeTab: 'chat', termWs: null };
+let state = { sessions: [], activeSession: null, userId: null, userName: '', ws: null, messages: {}, dashboard: true, activeTab: 'chat', termWs: null, inputMode: 'chat' };
 const API = '';
 
 async function api(path, opts = {}) {
@@ -108,6 +108,7 @@ function connectWS() {
     }
     if (msg.type === 'session_created' || msg.type === 'session_updated' || msg.type === 'session_deleted') {
       loadSessions();
+      if (msg.type === 'session_updated' && msg.session) updateSessionSummary(msg.session);
     }
   };
   state.ws.onclose = () => setTimeout(connectWS, 3000);
@@ -209,12 +210,21 @@ async function openSession(id) {
         <button class="btn btn-primary" onclick="promptAgent()">🤖 Agent</button>
       </div>
     </div>
-    ${s.summary ? `<div class="summary-block"><span class="label">Last:</span> ${s.summary}</div>` : ''}
+    <div id="session-summary" style="padding:8px 16px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;gap:16px;align-items:center;font-size:12px">
+      <span style="color:var(--text-dim)">Summary:</span>
+      <span id="summary-text" style="color:var(--text)">${s.summary ? escHtml(s.summary) : 'No activity yet'}</span>
+      <span style="color:var(--text-dim);margin-left:auto">${s.messageCount || 0} messages · ${s.participantCount || 0} people</span>
+    </div>
     <div id="session-content" style="flex:1;display:flex;flex-direction:column;min-height:0">
     <div class="chat-area" id="chat-area"></div>
     <div class="input-area">
       <div class="input-box">
-        <textarea id="chat-input" placeholder="Message this session, or type @ace to prompt the agent..." rows="1" 
+        <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
+          <button class="mode-btn ${state.inputMode==='chat'?'active':''}" onclick="setInputMode('chat')" id="mode-chat">💬 Chat</button>
+          <button class="mode-btn ${state.inputMode==='ace'?'active':''}" onclick="setInputMode('ace')" id="mode-ace">✦ Ace</button>
+          <span style="color:var(--text-dim);font-size:10px;margin-left:4px">Tab to switch</span>
+        </div>
+        <textarea id="chat-input" placeholder="${state.inputMode==='ace'?'Ask the agent anything...':'Message this session, or type @ace to prompt the agent...'}" rows="1" 
           oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'"
           onkeydown="handleInputKey(event)"></textarea>
         <div class="input-actions">
@@ -348,7 +358,17 @@ function cancelEdit(msgId, original) {
 
 function handleInputKey(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
-  if (e.key === '/' && e.target.value === '') { e.preventDefault(); promptAgent(); }
+  if (e.key === 'Tab') { e.preventDefault(); setInputMode(state.inputMode === 'chat' ? 'ace' : 'chat'); }
+}
+
+function setInputMode(mode) {
+  state.inputMode = mode;
+  const chatBtn = document.getElementById('mode-chat');
+  const aceBtn = document.getElementById('mode-ace');
+  const input = document.getElementById('chat-input');
+  if (chatBtn) chatBtn.className = 'mode-btn' + (mode === 'chat' ? ' active' : '');
+  if (aceBtn) aceBtn.className = 'mode-btn' + (mode === 'ace' ? ' active' : '');
+  if (input) input.placeholder = mode === 'ace' ? 'Ask the agent anything...' : 'Message this session, or type @ace to prompt the agent...';
 }
 
 function sendChat() {
@@ -356,7 +376,15 @@ function sendChat() {
   const text = input.value.trim();
   if (!text || !state.activeSession) return;
 
-  // If starts with /agent, prompt the agent
+  // In Ace mode, everything goes to the agent
+  if (state.inputMode === 'ace') {
+    promptAgentWithText(text);
+    input.value = '';
+    input.style.height = 'auto';
+    return;
+  }
+
+  // Chat mode: /agent sends to agent, @ace triggers agent
   if (text.startsWith('/agent ')) {
     const prompt = text.slice(7);
     promptAgentWithText(prompt);
@@ -638,6 +666,16 @@ function connectTerminal() {
           line.textContent = clean;
           out.appendChild(line);
           out.scrollTop = out.scrollHeight;
+
+          // Auto-detect dev server ports
+          const portMatch = clean.match(/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{2,5})/);
+          if (portMatch) {
+            const port = portMatch[1];
+            const previewUrl = document.getElementById('preview-url');
+            if (previewUrl) previewUrl.value = `http://localhost:${port}`;
+            // Show notification
+            showPortNotification(port);
+          }
         }
       }
       if (msg.type === 'exit') {
@@ -900,6 +938,31 @@ function promptForInput(msg) {
 }
 
 // Handle plan updates via WebSocket — handled in connectWS onmessage
+
+// ─── Port Detection Notification ────────────────────────
+function showPortNotification(port) {
+  let notif = document.getElementById('port-notification');
+  if (!notif) {
+    notif = document.createElement('div');
+    notif.id = 'port-notification';
+    notif.style.cssText = 'position:fixed;bottom:20px;right:20px;background:var(--surface2);border:1px solid var(--accent);border-radius:8px;padding:12px 16px;z-index:1000;font-size:13px;color:var(--text);box-shadow:0 4px 12px rgba(0,0,0,0.3);transition:opacity 0.3s';
+    document.body.appendChild(notif);
+  }
+  notif.innerHTML = `🔌 Dev server detected on port <strong style="color:var(--accent)">${port}</strong><br><button onclick="switchTab('preview');document.getElementById('port-notification').style.display='none'" style="margin-top:6px;padding:4px 12px;background:var(--accent);color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px">Open Preview</button>`;
+  notif.style.display = 'block';
+  notif.style.opacity = '1';
+  clearTimeout(window._portNotifTimeout);
+  window._portNotifTimeout = setTimeout(() => { if (notif) { notif.style.opacity = '0'; setTimeout(() => notif.style.display = 'none', 300); } }, 8000);
+}
+
+// ─── Summary Auto-Update ────────────────────────────────
+// When agent finishes, update summary bar
+function updateSessionSummary(sessionData) {
+  const summaryText = document.getElementById('summary-text');
+  if (summaryText && sessionData.summary) {
+    summaryText.textContent = sessionData.summary;
+  }
+}
 
 // ─── Init ────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
