@@ -9,6 +9,7 @@ import path from "node:path";
 import { URL } from "node:url";
 import { WebSocketServer } from "ws";
 import { execSync, spawn } from "node:child_process";
+import { saveSessions, loadSessions, saveUsers, loadUsers } from "./persist.mjs";
 
 // ─── Config ──────────────────────────────────────────────
 const PORT = parseInt(process.env.ACE_PORT || "3000");
@@ -17,9 +18,14 @@ const PROJECT_DIR = process.env.ACE_PROJECT_DIR || process.cwd();
 const AGENT_CMD = process.env.ACE_AGENT_CMD || "claude";
 
 // ─── State ───────────────────────────────────────────────
-const sessions = new Map();
-const users = new Map();
+const sessions = loadSessions();
+const users = loadUsers();
 const wsClients = new Map(); // ws -> { userId, sessionId }
+let saveTimeout = null;
+function scheduleSave() {
+  if (saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(() => { saveSessions(sessions); saveUsers(users); }, 2000);
+}
 
 // ─── Helpers ─────────────────────────────────────────────
 function uid() { return Math.random().toString(36).slice(2, 10); }
@@ -62,6 +68,7 @@ function createSession(name, userId) {
     lastCommit: null, summary: "",
   };
   sessions.set(id, session);
+  scheduleSave();
   return session;
 }
 
@@ -429,6 +436,7 @@ wss.on("connection", (ws) => {
         };
         session.messages.push(msg);
         broadcastToSession(data.sessionId, { type: "message", message: msg });
+        scheduleSave();
       }
 
       if (data.type === "agent_prompt") {
