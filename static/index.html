@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ace Workspace</title>
+<title>MADE</title>
 <link rel="stylesheet" href="/static/style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 </head>
 <body>
 <div class="app" id="app">
   <div class="sidebar">
-    <div class="logo"><span>⚡</span><div>Ace<small>Multiplayer Agent Workspace</small></div></div>
+    <div class="logo"><span>⚡</span><div>MADE<small>Multiplayer Agentic Development Environment</small></div></div>
     <div class="sidebar-section">
       <h3>Dashboard</h3>
       <div class="session-item active" onclick="showDashboard()" id="nav-dashboard">🏠 Home</div>
@@ -122,8 +122,8 @@ function connectWS() {
 
 // ─── User Setup ──────────────────────────────────────────
 async function setupUser() {
-  const name = localStorage.getItem('ace_user_name') || prompt('Your name:') || 'User';
-  localStorage.setItem('ace_user_name', name);
+  const name = localStorage.getItem('made_user_name') || localStorage.getItem('ace_user_name') || prompt('Your name:') || 'User';
+  localStorage.setItem('made_user_name', name);
   state.userName = name;
   const user = await api('/api/users', { method: 'POST', body: JSON.stringify({ name }) });
   state.userId = user.id;
@@ -229,10 +229,10 @@ async function openSession(id) {
           <div class="input-box" style="position:relative">
             <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
               <button class="mode-btn ${state.inputMode==='chat'?'active':''}" onclick="setInputMode('chat')" id="mode-chat">💬 Chat</button>
-              <button class="mode-btn ${state.inputMode==='ace'?'active':''}" onclick="setInputMode('ace')" id="mode-ace">✦ Ace</button>
+              <button class="mode-btn ${state.inputMode==='ace'?'active':''}" onclick="setInputMode('ace')" id="mode-ace">✦ Agent</button>
               <span style="color:var(--text-dim);font-size:10px;margin-left:4px">Tab to switch</span>
             </div>
-            <textarea id="chat-input" placeholder="${state.inputMode==='ace'?'Ask the agent anything...':'Message this session, or type @ace to prompt the agent...'}" rows="1" 
+            <textarea id="chat-input" placeholder="${state.inputMode==='ace'?'Ask the agent anything...':'Message this session, or type @made to prompt the agent...'}" rows="1" 
               oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';handleAutocompleteInput(event)"
               onkeydown="handleInputKey(event)"></textarea>
             <div class="input-actions">
@@ -802,7 +802,7 @@ function setInputMode(mode) {
   const input = document.getElementById('chat-input');
   if (chatBtn) chatBtn.className = 'mode-btn' + (mode === 'chat' ? ' active' : '');
   if (aceBtn) aceBtn.className = 'mode-btn' + (mode === 'ace' ? ' active' : '');
-  if (input) input.placeholder = mode === 'ace' ? 'Ask the agent anything...' : 'Message this session, or type @ace to prompt the agent...';
+  if (input) input.placeholder = mode === 'ace' ? 'Ask the agent anything...' : 'Message this session, or type @made to prompt the agent...';
 }
 
 function sendChat() {
@@ -810,7 +810,7 @@ function sendChat() {
   const text = input.value.trim();
   if (!text || !state.activeSession) return;
 
-  // In Ace mode, everything goes to the agent
+  // In Agent mode, everything goes to the agent
   if (state.inputMode === 'ace') {
     promptAgentWithText(text);
     input.value = '';
@@ -818,7 +818,7 @@ function sendChat() {
     return;
   }
 
-  // Chat mode: /agent sends to agent, @ace triggers agent
+  // Chat mode: /agent sends to agent, @made triggers agent
   if (text.startsWith('/agent ')) {
     const prompt = text.slice(7);
     promptAgentWithText(prompt);
@@ -1134,7 +1134,7 @@ async function switchTab(tab) {
       const panel = document.createElement('div');
       panel.id = 'term-panel';
       panel.style.cssText = 'flex:1;display:flex;flex-direction:column;';
-      panel.innerHTML = '<div class="ace-term"><div class="term-bar"><span class="term-title">Terminal — ' + (state.activeSession || '') + '</span><button style="background:var(--red);color:white;border:none;padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer" onclick="abortExec()">Stop</button></div><div class="term-body" id="term-output"></div><div class="term-input-row"><span class="term-prompt">$</span><input class="term-input" id="term-input" autofocus></div></div>';
+      panel.innerHTML = '<div class="made-term"><div class="term-bar"><span class="term-title">Terminal — ' + (state.activeSession || '') + '</span><button style="background:var(--red);color:white;border:none;padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer" onclick="abortExec()">Stop</button></div><div class="term-body" id="term-output"></div><div class="term-input-row"><span class="term-prompt">$</span><input class="term-input" id="term-input" autofocus></div></div>';
       document.querySelector('.main').appendChild(panel);
       connectTerminal();
     }
@@ -1400,7 +1400,7 @@ async function loadPlan() {
         </div>
         <div style="margin-bottom:12px;color:var(--text-dim);font-size:13px">
           Edit the plan below. Teammates can see and edit it too. 
-          Then go back to chat and type <code style="background:var(--surface3);padding:2px 6px;border-radius:3px">@ace do this</code> to execute it.
+          Then go back to chat and type <code style="background:var(--surface3);padding:2px 6px;border-radius:3px">@made do this</code> to execute it.
         </div>
         <div id="plan-typing-indicator" style="display:none;color:var(--accent);font-size:12px;margin-bottom:4px"></div>
         <textarea id="plan-editor" 
@@ -1410,7 +1410,7 @@ async function loadPlan() {
         >${plan ? escHtml(plan.content) : ''}</textarea>
         <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
           <button class="btn btn-primary" onclick="savePlan()">💾 Save Plan</button>
-          <button class="btn" onclick="executePlan()">🚀 Execute Plan (@ace do this)</button>
+          <button class="btn" onclick="executePlan()">🚀 Execute Plan (@made do this)</button>
           <span id="plan-status" style="color:var(--text-dim);font-size:12px"></span>
         </div>
       </div>
@@ -1473,11 +1473,11 @@ async function deletePlan() {
 
 async function executePlan() {
   await savePlan();
-  // Send @ace do this to chat
+  // Send @made do this to chat
   if (state.ws?.readyState === 1 && state.activeSession) {
     state.ws.send(JSON.stringify({
       type: 'chat', sessionId: state.activeSession, userId: state.userId,
-      userName: state.userName, content: '@ace do this',
+      userName: state.userName, content: '@made do this',
     }));
   }
   switchTab('chat');

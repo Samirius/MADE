@@ -1,12 +1,14 @@
-# Contributing to Ace Workspace
+# Contributing to MADE
+
+**M**ultiplayer **A**gentic **D**evelopment **E**nvironment
 
 Thanks for your interest! Here's how to get started.
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/Samirius/ace-workspace.git
-cd ace-workspace
+git clone https://github.com/Samirius/made.git
+cd made
 npm install
 npm run dev    # Starts server with --watch (auto-restart on changes)
 ```
@@ -16,7 +18,7 @@ Open http://localhost:3000
 ## Architecture
 
 ```
-ace-workspace/
+made/
 ├── src/
 │   ├── server.mjs      # Main server — HTTP + WebSocket + terminal
 │   └── persist.mjs     # JSON file persistence
@@ -30,9 +32,10 @@ ace-workspace/
 ```
 
 **Design Principles:**
-- Zero dependencies (except `ws` for WebSocket)
+- Minimal dependencies (only `ws` + `node-pty`)
 - No build step — HTML/CSS/JS served directly
-- Self-hosted — runs on any machine with Node.js 18+
+- Self-hosted — runs on any machine with Node.js 22+
+- Git-agnostic — works with GitHub, GitLab, Gitea, Bitbucket, or plain local git
 - Single-file architecture — easy to understand and fork
 
 ## Development Workflow
@@ -48,39 +51,32 @@ ace-workspace/
 ### Server (`src/server.mjs`)
 - HTTP API routes
 - WebSocket chat/agent handling
-- Terminal WebSocket (`/term/:sessionId`)
-- File browser API
-- Live preview proxy
-- Agent spawning (Claude/Codex/OpenCode)
+- Agent spawning and management
+- Git provider auto-detection
+- Terminal integration
+- File upload handling
+- Session management
 
 ### Frontend (`static/`)
-- Dashboard view
-- Session chat
-- Terminal tab
-- File browser tab
-- Preview tab
-- WebSocket connection management
+- Single HTML file with all UI logic
+- WebSocket client
+- Terminal emulator
+- Split view preview
+- Inline diff cards
+- Autocomplete (@made, #sessions, /commands)
+- Dashboard with activity feed
 
-### Persistence (`src/persist.mjs`)
-- JSON file store
-- Auto-save with debounce
-- Session/user serialization
+## Environment Variables
 
-## Adding a New Agent
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MADE_PORT` | `3000` | Server port |
+| `MADE_TOKEN` | — | Auth token (optional) |
+| `MADE_AGENT_CMD` | — | Agent CLI command |
+| `MADE_PROJECT_DIR` | `.` | Project directory |
 
-In `server.mjs`, find `spawnAgent()` and add your agent:
+*Backward compat: `ACE_*` env vars still work as fallbacks.*
 
-```javascript
-if (AGENT_CMD === "your-agent") {
-  args = ["--your-flags", prompt];
-  cmd = "your-agent-cli";
-}
-```
+## Branch Convention
 
-## Reporting Issues
-
-Open a GitHub issue with:
-- What you expected
-- What happened
-- Steps to reproduce
-- Node.js version (`node --version`)
+All AI-generated branches end with `-hermes` for easy identification.

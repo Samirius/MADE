@@ -1,7 +1,7 @@
 {
-  "name": "ace-workspace",
+  "name": "made",
   "version": "0.2.0",
-  "description": "Open-source multiplayer coding agent workspace",
+  "description": "MADE — the open multiplayer agentic development environment. Works with any git, anywhere.",
   "type": "module",
   "scripts": {
     "dev": "node --watch src/server.mjs",

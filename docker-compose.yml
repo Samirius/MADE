@@ -1,16 +1,25 @@
 services:
-  ace:
+  made:
     build: .
+    container_name: made
     ports:
-      - "${ACE_PORT:-3000}:3000"
+      - "3000:3000"
     volumes:
-      - ace-data:/app/.sessions
+      - ./data/sessions:/app/.sessions
+      - ./data/made-data:/app/.made-data
+      - ./data/project:/project
     environment:
-      - ACE_PORT=3000
-      - ACE_HOST=0.0.0.0
-      - ACE_PROJECT_DIR=/app
-      - ACE_AGENT_CMD=${ACE_AGENT_CMD:-claude}
+      - MADE_PROJECT_DIR=/project
+      # Uncomment or set in .env:
+      # - MADE_TOKEN=your-secret-token
+      # - MADE_AGENT_CMD=your-agent-command
+    env_file:
+      - path: .env
+        required: false
     restart: unless-stopped
-
-volumes:
-  ace-data:
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3

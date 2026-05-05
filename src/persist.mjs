@@ -1,12 +1,12 @@
 // ═══════════════════════════════════════════════════════════
-// Ace Workspace — Persistence Layer
+// MADE — Persistence Layer
 // Simple JSON file store. Sessions survive restarts.
 // ═══════════════════════════════════════════════════════════
 
 import fs from "node:fs";
 import path from "node:path";
 
-const DATA_DIR = process.env.ACE_DATA_DIR || path.join(process.cwd(), ".ace-data");
+const DATA_DIR = process.env.MADE_DATA_DIR || process.env.ACE_DATA_DIR || path.join(process.cwd(), ".made-data");
 const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
 

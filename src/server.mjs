@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// Ace Workspace — Open-source multiplayer coding agent workspace
+// MADE — the open multiplayer agentic development environment
 // Pure Node.js, zero dependencies
 // ═══════════════════════════════════════════════════════════
 
@@ -11,14 +11,15 @@ import { WebSocketServer } from "ws";
 import { execSync, spawn } from "node:child_process";
 import pty from "node-pty";
 import { saveSessions, loadSessions, saveUsers, loadUsers } from "./persist.mjs";
+import { detectProvider, createMergeRequest, getWebUrl } from "./git-provider.mjs";
 
 // ─── Config ──────────────────────────────────────────────
-const PORT = parseInt(process.env.ACE_PORT || "3000");
-const HOST = process.env.ACE_HOST || "0.0.0.0";
-const PROJECT_DIR = process.env.ACE_PROJECT_DIR || process.cwd();
-const AGENT_CMD = process.env.ACE_AGENT_CMD || "claude";
-const AUTH_TOKEN = process.env.ACE_TOKEN || null; // If set (non-empty), all requests need ?token=X or Authorization header
-if (AUTH_TOKEN === "") { console.warn("⚠ ACE_TOKEN is empty string — auth disabled. Set a non-empty value to enable."); }
+const PORT = parseInt(process.env.MADE_PORT || process.env.ACE_PORT || "3000");
+const HOST = process.env.MADE_HOST || process.env.ACE_HOST || "0.0.0.0";
+const PROJECT_DIR = process.env.MADE_PROJECT_DIR || process.env.ACE_PROJECT_DIR || process.cwd();
+const AGENT_CMD = process.env.MADE_AGENT_CMD || process.env.ACE_AGENT_CMD || "claude";
+const AUTH_TOKEN = process.env.MADE_TOKEN || process.env.ACE_TOKEN || null; // If set (non-empty), all requests need ?token=X or Authorization header
+if (AUTH_TOKEN === "") { console.warn("⚠ MADE_TOKEN is empty string — auth disabled. Set a non-empty value to enable."); }
 
 // ─── State ───────────────────────────────────────────────
 const sessions = loadSessions();
@@ -54,7 +55,7 @@ function broadcastAll(msg) {
 // ─── Session Management ──────────────────────────────────
 function createSession(name, userId) {
   const id = uid();
-  const branch = `ace/${id}-${name.replace(/[^a-z0-9]/gi, "-")}`;
+  const branch = `made/${id}-${name.replace(/[^a-z0-9]/gi, "-")}`;
   const workDir = path.join(PROJECT_DIR, ".sessions", id);
   fs.mkdirSync(workDir, { recursive: true });
 
@@ -63,11 +64,11 @@ function createSession(name, userId) {
     execSync("git init", { cwd: workDir, stdio: "ignore" });
     execSync(`git checkout -b ${branch}`, { cwd: workDir, stdio: "ignore" });
     // Write a README so there's something to commit
-    fs.writeFileSync(path.join(workDir, "README.md"), `# ${name}\n\nAce workspace session.\n`);
+    fs.writeFileSync(path.join(workDir, "README.md"), `# ${name}\n\nMADE session.\n`);
     execSync("git add -A", { cwd: workDir, stdio: "ignore" });
-    execSync('git commit -m "init: Ace session" --no-gpg-sign', {
+    execSync('git commit -m "init: MADE session" --no-gpg-sign', {
       cwd: workDir, stdio: "ignore",
-      env: { ...process.env, GIT_AUTHOR_NAME: "Ace", GIT_AUTHOR_EMAIL: "ace@sabbk.com", GIT_COMMITTER_NAME: "Ace", GIT_COMMITTER_EMAIL: "ace@sabbk.com" },
+      env: { ...process.env, GIT_AUTHOR_NAME: "MADE", GIT_AUTHOR_EMAIL: "made@sabbk.com", GIT_COMMITTER_NAME: "MADE", GIT_COMMITTER_EMAIL: "made@sabbk.com" },
     });
   } catch (e) { /* git may not be available, that's ok */ }
 
@@ -76,7 +77,7 @@ function createSession(name, userId) {
     createdAt: now(), updatedAt: now(),
     createdBy: userId || "anon",
     messages: [{
-      id: uid(), sessionId: id, userId: "system", userName: "Ace",
+      id: uid(), sessionId: id, userId: "system", userName: "MADE",
       type: "system", content: `Session "${name}" created. Branch: ${branch}`,
       timestamp: now(),
     }],
@@ -105,7 +106,7 @@ function sessionToJSON(s) {
 // ─── Build conversation context for agent ────────────────
 function buildConversationPrompt(session, userPrompt) {
   const lines = [];
-  lines.push(`# Ace Session: ${session.name}`);
+  lines.push(`# MADE Session: ${session.name}`);
   lines.push(`Branch: ${session.branch}`);
   lines.push("");
   lines.push("## Conversation History");
@@ -132,7 +133,7 @@ function buildConversationPrompt(session, userPrompt) {
   lines.push("## Current Request");
   lines.push(userPrompt);
   lines.push("");
-  lines.push("You are in the Ace workspace. The project files are in the current directory. Make the changes requested above.");
+  lines.push("You are in the MADE workspace. The project files are in the current directory. Make the changes requested above.");
 
   return lines.join("\n");
 }
@@ -147,7 +148,7 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
     if (!session.agentQueue) session.agentQueue = [];
     session.agentQueue.push({ prompt, userId, model });
     const queueMsg = {
-      id: uid(), sessionId, userId: "system", userName: "Ace",
+      id: uid(), sessionId, userId: "system", userName: "MADE",
       type: "system", content: `Agent busy. Request queued (position: ${session.agentQueue.length})`,
       timestamp: now(),
     };
@@ -160,7 +161,7 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
   broadcastAll({ type: "session_updated", session: sessionToJSON(session) });
 
   const startMsg = {
-    id: uid(), sessionId, userId: "system", userName: "Ace",
+    id: uid(), sessionId, userId: "system", userName: "MADE",
     type: "agent_start", content: prompt, timestamp: now(),
     metadata: { model, triggeredBy: userId },
   };
@@ -243,7 +244,7 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
         execSync("git add -A", { cwd: session.workDir, stdio: "ignore" });
         execSync(`git commit -m ${JSON.stringify(prompt.slice(0, 72))} --no-gpg-sign --allow-empty`, {
           cwd: session.workDir, stdio: "ignore",
-          env: { ...process.env, GIT_AUTHOR_NAME: "Ace Agent", GIT_AUTHOR_EMAIL: "ace@sabbk.com", GIT_COMMITTER_NAME: "Ace Agent", GIT_COMMITTER_EMAIL: "ace@sabbk.com" },
+          env: { ...process.env, GIT_AUTHOR_NAME: "MADE Agent", GIT_AUTHOR_EMAIL: "made@sabbk.com", GIT_COMMITTER_NAME: "MADE Agent", GIT_COMMITTER_EMAIL: "made@sabbk.com" },
         });
         session.lastCommit = prompt.slice(0, 72);
         session.summary = prompt.slice(0, 100);
@@ -259,7 +260,7 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
     });
   } catch (err) {
     const errMsg = {
-      id: uid(), sessionId, userId: "system", userName: "Ace",
+      id: uid(), sessionId, userId: "system", userName: "MADE",
       type: "agent_done", content: `Agent error: ${err.message}`, timestamp: now(),
     };
     session.messages.push(errMsg);
@@ -382,7 +383,7 @@ async function handleAPI(req, res, urlPath, method) {
     const headerToken = (req.headers.authorization || "").replace("Bearer ", "");
     if (queryToken !== AUTH_TOKEN && headerToken !== AUTH_TOKEN) {
       res.writeHead(401, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Unauthorized. Set ACE_TOKEN or pass ?token=..." }));
+      res.end(JSON.stringify({ error: "Unauthorized. Set MADE_TOKEN or pass ?token=..." }));
       return;
     }
   }
@@ -391,6 +392,16 @@ async function handleAPI(req, res, urlPath, method) {
 
   // Routes
   if (urlPath === "/health" && method === "GET") return send(json({ status: "ok", version: "0.2.0" }));
+
+  // ─── Git Provider Info ──────────────────────────────────
+  if (urlPath === "/api/git/provider" && method === "GET") {
+    try {
+      const providerInfo = detectProvider(PROJECT_DIR);
+      return send(json({ ok: true, ...providerInfo }));
+    } catch (e) {
+      return send(json({ ok: false, provider: "unknown", error: e.message }));
+    }
+  }
 
   if (urlPath === "/api/sessions" && method === "GET") {
     return send(json({ sessions: Array.from(sessions.values()).map(sessionToJSON) }));
@@ -550,12 +561,12 @@ async function handleAPI(req, res, urlPath, method) {
     const s = sessions.get(gitCommitMatch[1]);
     if (!s) return send(json({ error: "Not found" }, 404));
     const body = await parseBody(req);
-    const message = body.message || "Update from Ace";
+    const message = body.message || "Update from MADE";
     try {
       execSync("git add -A", { cwd: s.workDir, stdio: "ignore" });
       execSync(`git commit -m ${JSON.stringify(message)} --no-gpg-sign --allow-empty`, {
         cwd: s.workDir, stdio: "ignore",
-        env: { ...process.env, GIT_AUTHOR_NAME: "Ace Agent", GIT_AUTHOR_EMAIL: "ace@sabbk.com", GIT_COMMITTER_NAME: "Ace Agent", GIT_COMMITTER_EMAIL: "ace@sabbk.com" },
+        env: { ...process.env, GIT_AUTHOR_NAME: "MADE Agent", GIT_AUTHOR_EMAIL: "made@sabbk.com", GIT_COMMITTER_NAME: "MADE Agent", GIT_COMMITTER_EMAIL: "made@sabbk.com" },
       });
       s.lastCommit = message;
       s.updatedAt = now();
@@ -567,7 +578,7 @@ async function handleAPI(req, res, urlPath, method) {
     }
   }
 
-  // ─── Create PR ─────────────────────────────────────────
+  // ─── Create PR / Merge Request (provider-agnostic) ───────
   const prMatch = urlPath.match(/^\/api\/sessions\/([^/]+)\/pr$/);
   if (prMatch && method === "POST") {
     const s = sessions.get(prMatch[1]);
@@ -578,23 +589,33 @@ async function handleAPI(req, res, urlPath, method) {
     try {
       // Auto-commit first
       execSync("git add -A", { cwd: s.workDir, stdio: "ignore" });
-      try { execSync(`git commit -m ${JSON.stringify(title)} --no-gpg-sign --allow-empty`, { cwd: s.workDir, stdio: "ignore", env: { ...process.env, GIT_AUTHOR_NAME: "Ace", GIT_AUTHOR_EMAIL: "ace@sabbk.com", GIT_COMMITTER_NAME: "Ace", GIT_COMMITTER_EMAIL: "ace@sabbk.com" } }); } catch {}
+      try { execSync(`git commit -m ${JSON.stringify(title)} --no-gpg-sign --allow-empty`, { cwd: s.workDir, stdio: "ignore", env: { ...process.env, GIT_AUTHOR_NAME: "MADE", GIT_AUTHOR_EMAIL: "made@sabbk.com", GIT_COMMITTER_NAME: "MADE", GIT_COMMITTER_EMAIL: "made@sabbk.com" } }); } catch {}
 
-      // If repo specified, push and create PR via gh CLI
+      // If repo specified, add remote and push
       if (repo) {
         execSync(`git remote add origin ${repo} 2>/dev/null || true`, { cwd: s.workDir, stdio: "ignore" });
         execSync(`git push -u origin ${s.branch} 2>&1`, { cwd: s.workDir, encoding: "utf8" });
-        // Build PR body with session link
-        const host = req.headers.host || `localhost:${PORT}`;
-        const sessionUrl = `${req.headers['x-forwarded-proto'] || 'http'}://${host}/?session=${prMatch[1]}`;
-        const prBody = (body.body || "Created by Ace Workspace") + `\n\n---\n🔗 [Ace Workspace Session](${sessionUrl})`;
-        const prOut = execSync(`gh pr create --title ${JSON.stringify(title)} --body ${JSON.stringify(prBody)} --head ${s.branch}`, {
-          cwd: s.workDir, encoding: "utf8",
-        });
-        return send(json({ ok: true, prUrl: prOut.trim() }));
       }
 
-      return send(json({ ok: true, message: "Committed. Push to a remote repo to create a PR." }));
+      // Build MR body with session link
+      const host = req.headers.host || `localhost:${PORT}`;
+      const sessionUrl = `${req.headers['x-forwarded-proto'] || 'http'}://${host}/?session=${prMatch[1]}`;
+      const mrBody = (body.body || "Created by MADE") + `\n\n---\n🔗 [MADE Session](${sessionUrl})`;
+
+      // Use provider abstraction to create the merge request
+      const result = createMergeRequest(s.workDir, title, mrBody, s.branch);
+
+      if (result.ok) {
+        return send(json({
+          ok: true,
+          prUrl: result.url || null,
+          message: result.message || null,
+          provider: result.provider,
+          method: result.method,
+        }));
+      } else {
+        return send(json({ error: result.error || "Merge request creation failed", provider: result.provider }, 500));
+      }
     } catch (e) {
       return send(json({ error: e.message }, 500));
     }
@@ -674,7 +695,7 @@ async function handleAPI(req, res, urlPath, method) {
     return send(json({ ok: true }));
   }
 
-  // ─── @ace Generate Plan ────────────────────────────────
+  // ─── @made Generate Plan ────────────────────────────────
   const genPlanMatch = urlPath.match(/^\/api\/sessions\/([^/]+)\/plan\/generate$/);
   if (genPlanMatch && method === "POST") {
     const s = sessions.get(genPlanMatch[1]);
@@ -936,7 +957,7 @@ const server = http.createServer(async (req, res) => {
     fs.createReadStream(indexPath).pipe(res);
   } else {
     res.writeHead(404, { "Content-Type": "text/plain" });
-    res.end("Ace Workspace - static/index.html not found");
+    res.end("MADE - static/index.html not found");
   }
 });
 
@@ -969,11 +990,11 @@ wss.on("connection", (ws) => {
         broadcastToSession(data.sessionId, { type: "message", message: msg });
         scheduleSave();
 
-        // Detect @ace mention — trigger agent automatically
+        // Detect @made mention — trigger agent automatically
         const content = data.content.trim();
-        const aceMatch = content.match(/^@ace\s+(.+)/i) || content.match(/^ace[\s,:]+(.+)/i);
-        if (aceMatch) {
-          let agentPrompt = aceMatch[1];
+        const madeMatch = content.match(/^@made\s+(.+)/i) || content.match(/^made[\s,:]+(.+)/i) || content.match(/^@ace\s+(.+)/i) || content.match(/^ace[\s,:]+(.+)/i);
+        if (madeMatch) {
+          let agentPrompt = madeMatch[1];
           // If they say "do this" or "do it" and there's a plan, include the plan
           if (/^do (this|it|the plan)$/i.test(agentPrompt) && session.plan) {
             agentPrompt = `Execute the following plan:\n\n${session.plan.content}\n\n${agentPrompt}`;
@@ -1098,7 +1119,8 @@ termWss.on("connection", (ws) => {
 
 // ─── Start ───────────────────────────────────────────────
 server.listen(PORT, HOST, () => {
-  console.log(`\n  ⚡ Ace Workspace`);
+  console.log(`\n  ⚡ MADE`);
+  console.log(`  Multiplayer Agentic Development Environment`);
   console.log(`  ─────────────────────────────`);
   console.log(`  http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}`);
   console.log(`  Project: ${PROJECT_DIR}`);

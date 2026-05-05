@@ -1,19 +1,30 @@
 FROM node:22-slim
 
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+# Install git for git operations
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-RUN npm ci --production
+# Copy package files first for layer caching
+COPY package.json package-lock.json* ./
 
+# Install dependencies
+RUN npm install --omit=dev && npm cache clean --force
+
+# Copy application source
 COPY . .
 
-RUN mkdir -p .sessions
+# Create volume mount points for persistent data
+VOLUME ["/app/.sessions", "/app/.made-data"]
 
+# Expose the default port
 EXPOSE 3000
 
-ENV ACE_PORT=3000
-ENV ACE_HOST=0.0.0.0
+# Health check against the root endpoint
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD node -e "fetch('http://localhost:3000/').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))"
 
-CMD ["node", "src/server.mjs"]
+# Start the server
+ENTRYPOINT ["node", "src/server.mjs"]
