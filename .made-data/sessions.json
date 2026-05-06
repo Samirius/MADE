@@ -5,11 +5,11 @@
     "branch": "made/8pt73gao-Samir-Testing",
     "workDir": "/home/stark/ace-workspace/.sessions/8pt73gao",
     "createdAt": 1778008980979,
-    "updatedAt": 1778008980979,
+    "updatedAt": 1778010261792,
     "createdBy": "r4cg9peq",
     "agentRunning": false,
-    "lastCommit": null,
-    "summary": "",
+    "lastCommit": "say hello in one sentence",
+    "summary": "say hello in one sentence",
     "messages": [
       {
         "id": "iodnj4dk",
@@ -37,6 +37,115 @@
         "type": "chat",
         "content": "hello",
         "timestamp": 1778009925653
+      },
+      {
+        "id": "tggu2551",
+        "sessionId": "8pt73gao",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "agent_start",
+        "content": "say hello in one sentence",
+        "timestamp": 1778010253746,
+        "metadata": {
+          "model": "opus",
+          "triggeredBy": "test"
+        }
+      },
+      {
+        "id": "ya0p2j26",
+        "sessionId": "8pt73gao",
+        "userId": "agent",
+        "userName": "Agent",
+        "type": "agent_stream",
+        "content": "Got it — you've specified `--model glm-5.1` (GLM-5.1).",
+        "timestamp": 1778010260355
+      },
+      {
+        "id": "kwm7v3xi",
+        "sessionId": "8pt73gao",
+        "userId": "agent",
+        "userName": "Agent",
+        "type": "agent_stream",
+        "content": "How can I help you? Are you:",
+        "timestamp": 1778010260356
+      },
+      {
+        "id": "3gfjdv9m",
+        "sessionId": "8pt73gao",
+        "userId": "agent",
+        "userName": "Agent",
+        "type": "agent_stream",
+        "content": "1. **Configuring a tool/CLI** to use GLM-5.1?",
+        "timestamp": 1778010261746
+      },
+      {
+        "id": "9r7o4vip",
+        "sessionId": "8pt73gao",
+        "userId": "agent",
+        "userName": "Agent",
+        "type": "agent_stream",
+        "content": "2. **Writing code** that calls the GLM-5.1 API?",
+        "timestamp": 1778010261747
+      },
+      {
+        "id": "ox7wocop",
+        "sessionId": "8pt73gao",
+        "userId": "agent",
+        "userName": "Agent",
+        "type": "agent_stream",
+        "content": "3. **Something else**?",
+        "timestamp": 1778010261748
+      },
+      {
+        "id": "jto4opiw",
+        "sessionId": "8pt73gao",
+        "userId": "agent",
+        "userName": "Agent",
+        "type": "agent_stream",
+        "content": "Give me more context and I'll jump in.",
+        "timestamp": 1778010261748
+      },
+      {
+        "id": "1ozll65u",
+        "sessionId": "8pt73gao",
+        "userId": "agent",
+        "userName": "Agent",
+        "type": "agent_done",
+        "content": "Agent finished (exit: 0)",
+        "timestamp": 1778010261792
+      },
+      {
+        "id": "e2ufb37y",
+        "sessionId": "8pt73gao",
+        "userId": "chqqdbyi",
+        "userName": "Samirius",
+        "type": "chat",
+        "content": "hello",
+        "timestamp": 1778010392989
+      }
+    ],
+    "plan": null
+  },
+  "pvjae2nv": {
+    "id": "pvjae2nv",
+    "name": "v0.4.0 Adapter Test",
+    "branch": "made/pvjae2nv-v0-4-0-Adapter-Test",
+    "workDir": "/home/stark/ace-workspace/.sessions/pvjae2nv",
+    "createdAt": 1778106930287,
+    "updatedAt": 1778106930287,
+    "createdBy": "test",
+    "agentRunning": false,
+    "lastCommit": null,
+    "summary": "",
+    "messages": [
+      {
+        "id": "glnv836y",
+        "sessionId": "pvjae2nv",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "system",
+        "content": "Session \"v0.4.0 Adapter Test\" created. Branch: made/pvjae2nv-v0-4-0-Adapter-Test",
+        "timestamp": 1778106930287
       }
     ],
     "plan": null

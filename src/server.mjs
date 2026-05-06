@@ -12,6 +12,8 @@ import { execSync, spawn } from "node:child_process";
 import pty from "node-pty";
 import { saveSessions, loadSessions, saveUsers, loadUsers } from "./persist.mjs";
 import { detectProvider, createMergeRequest, getWebUrl } from "./git-provider.mjs";
+import { getAdapter, detectAll as detectAllAgents, findBest as findBestAgent } from "./agent/registry.mjs";
+import { fullDetect } from "./onboard.mjs";
 
 // ─── Config ──────────────────────────────────────────────
 const PORT = parseInt(process.env.MADE_PORT || process.env.ACE_PORT || "3000");
@@ -138,7 +140,19 @@ function buildConversationPrompt(session, userPrompt) {
   return lines.join("\n");
 }
 
-// ─── Agent Execution ─────────────────────────────────────
+// ─── Agent Execution (via Adapter Registry) ────────────
+function resolveAdapter(requestedModel) {
+  // If MADE_AGENT_CMD is set to a specific agent, use it
+  if (AGENT_CMD && AGENT_CMD !== "auto") {
+    return getAdapter(AGENT_CMD);
+  }
+  // Otherwise, find the best available agent on this system
+  const best = findBestAgent();
+  if (best) return best.adapter;
+  // Last resort: try whatever AGENT_CMD says
+  return getAdapter(AGENT_CMD || "claude");
+}
+
 function spawnAgent(sessionId, prompt, userId, model = "opus") {
   const session = sessions.get(sessionId);
   if (!session) return;
@@ -168,149 +182,41 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
   session.messages.push(startMsg);
   broadcastToSession(sessionId, { type: "message", message: startMsg });
 
-  // Build full conversation as context
-  // GLM gets only the latest user prompt (history confuses it)
-  // Other agents (claude, codex) get full conversation context
-  const fullPrompt = AGENT_CMD === "glm" ? prompt : buildConversationPrompt(session, prompt);
+  // Get the right adapter for this system
+  const adapter = resolveAdapter(model);
 
-  // Build agent command
-  const modelFlags = {
-    opus: "--model claude-opus-4-20250514",
-    sonnet: "--model claude-sonnet-4-20250514",
-    haiku: "--model claude-haiku-4-20250514",
+  // Stream callback — broadcasts each line to connected clients
+  const onStream = ({ type: streamType, content: streamContent }) => {
+    const streamMsg = {
+      id: uid(), sessionId, userId: "agent", userName: "Agent",
+      type: "agent_stream", content: streamContent, timestamp: now(),
+    };
+    session.messages.push(streamMsg);
+    broadcastToSession(sessionId, { type: "message", message: streamMsg });
   };
-  const modelFlag = modelFlags[model] || "";
 
-  let cmd, args;
-  if (AGENT_CMD === "claude") {
-    args = ["--dangerously-skip-permissions", ...modelFlag.split(" ").filter(Boolean), "-p", fullPrompt, "--output-format", "stream-json"];
-    cmd = "claude";
-  } else if (AGENT_CMD === "codex") {
-    args = ["--full-auto", fullPrompt];
-    cmd = "codex";
-  } else if (AGENT_CMD === "opencode") {
-    args = ["-p", fullPrompt];
-    cmd = "opencode";
-  } else if (AGENT_CMD === "glm") {
-    const glmModel = model === "haiku" ? "--model glm-4-flash" : "--model glm-5.1";
-    const scriptPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'made-glm-agent.py');
-    args = [glmModel];
-    cmd = scriptPath;
-  } else {
-    args = ["-c", `${AGENT_CMD} ${modelFlag} "${fullPrompt}"`];
-    cmd = "bash";
-  }
+  // Run the agent via adapter
+  (async () => {
+    try {
+      await adapter.start(session.workDir, { model });
 
-  // GLM agent reads prompt from stdin; others read from args
-  const useStdin = AGENT_CMD === "glm";
+      const result = await adapter.send(
+        prompt,
+        { session, model },
+        onStream
+      );
 
-  try {
-    const proc = spawn(cmd, args, {
-      cwd: session.workDir,
-      env: { ...process.env },
-      stdio: [useStdin ? "pipe" : "ignore", "pipe", "pipe"],
-    });
-    session.agentPid = proc.pid;
-
-    if (useStdin) {
-      proc.stdin.write(fullPrompt);
-      proc.stdin.end();
-    }
-
-    let buffer = "";
-    let fileCapture = null;  // Track file block capture for GLM
-    let fileBuffer = "";
-    let fileBlocks = [];     // Collected {path, content} for auto-write
-
-    proc.stdout.on("data", (chunk) => {
-      buffer += chunk.toString();
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-
-        // GLM file block detection: ```file:PATH
-        if (fileCapture) {
-          if (line.trim() === "```") {
-            // End of file block — write to disk
-            try {
-              const filePath = path.join(session.workDir, fileCapture);
-              fs.mkdirSync(path.dirname(filePath), { recursive: true });
-              fs.writeFileSync(filePath, fileBuffer);
-              fileBlocks.push(fileCapture);
-              const writeMsg = {
-                id: uid(), sessionId, userId: "system", userName: "MADE",
-                type: "agent_stream", content: `✅ Wrote ${fileCapture}`, timestamp: now(),
-              };
-              session.messages.push(writeMsg);
-              broadcastToSession(sessionId, { type: "message", message: writeMsg });
-            } catch (err) {
-              const errMsg = {
-                id: uid(), sessionId, userId: "system", userName: "MADE",
-                type: "agent_stream", content: `❌ Failed to write ${fileCapture}: ${err.message}`, timestamp: now(),
-              };
-              session.messages.push(errMsg);
-              broadcastToSession(sessionId, { type: "message", message: errMsg });
-            }
-            fileCapture = null;
-            fileBuffer = "";
-            continue;
-          } else {
-            fileBuffer += line + "\n";
-            // Still stream the line to UI so user sees what's happening
-            const streamMsg = {
-              id: uid(), sessionId, userId: "agent", userName: "Agent",
-              type: "agent_stream", content: line, timestamp: now(),
-            };
-            session.messages.push(streamMsg);
-            broadcastToSession(sessionId, { type: "message", message: streamMsg });
-            continue;
-          }
-        }
-
-        // Check for file block start
-        const fileMatch = line.match(/^```file:(.+)$/);
-        if (fileMatch) {
-          fileCapture = fileMatch[1].trim();
-          fileBuffer = "";
-          const startMsg = {
-            id: uid(), sessionId, userId: "system", userName: "MADE",
-            type: "agent_stream", content: `📝 Creating ${fileCapture}...`, timestamp: now(),
-          };
-          session.messages.push(startMsg);
-          broadcastToSession(sessionId, { type: "message", message: startMsg });
-          continue;
-        }
-
-        const streamMsg = {
-          id: uid(), sessionId, userId: "agent", userName: "Agent",
-          type: "agent_stream", content: line, timestamp: now(),
-        };
-        session.messages.push(streamMsg);
-        broadcastToSession(sessionId, { type: "message", message: streamMsg });
-      }
-    });
-
-    proc.stderr.on("data", (chunk) => {
-      const streamMsg = {
-        id: uid(), sessionId, userId: "agent", userName: "Agent",
-        type: "agent_stream", content: chunk.toString(), timestamp: now(),
-      };
-      session.messages.push(streamMsg);
-      broadcastToSession(sessionId, { type: "message", message: streamMsg });
-    });
-
-    proc.on("close", (code) => {
       const doneMsg = {
         id: uid(), sessionId, userId: "agent", userName: "Agent",
-        type: "agent_done", content: `Agent finished (exit: ${code})`, timestamp: now(),
+        type: "agent_done",
+        content: result.exitCode === 0
+          ? `Agent finished${result.filesChanged?.length ? ` (${result.filesChanged.length} files changed)` : ""}`
+          : `Agent finished (exit: ${result.exitCode})`,
+        timestamp: now(),
+        metadata: { exitCode: result.exitCode, filesChanged: result.filesChanged },
       };
       session.messages.push(doneMsg);
       broadcastToSession(sessionId, { type: "message", message: doneMsg });
-
-      session.agentRunning = false;
-      session.agentPid = null;
-      session.updatedAt = now();
 
       // Auto commit
       try {
@@ -323,6 +229,18 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
         session.summary = prompt.slice(0, 100);
       } catch {}
 
+    } catch (err) {
+      const errMsg = {
+        id: uid(), sessionId, userId: "system", userName: "MADE",
+        type: "agent_done", content: `Agent error: ${err.message}`, timestamp: now(),
+      };
+      session.messages.push(errMsg);
+      broadcastToSession(sessionId, { type: "message", message: errMsg });
+
+    } finally {
+      session.agentRunning = false;
+      session.agentPid = null;
+      session.updatedAt = now();
       broadcastAll({ type: "session_updated", session: sessionToJSON(session) });
 
       // Process next queued agent request
@@ -330,22 +248,8 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
         const next = session.agentQueue.shift();
         setTimeout(() => spawnAgent(sessionId, next.prompt, next.userId, next.model), 1000);
       }
-    });
-  } catch (err) {
-    const errMsg = {
-      id: uid(), sessionId, userId: "system", userName: "MADE",
-      type: "agent_done", content: `Agent error: ${err.message}`, timestamp: now(),
-    };
-    session.messages.push(errMsg);
-    broadcastToSession(sessionId, { type: "message", message: errMsg });
-    session.agentRunning = false;
-    session.agentPid = null;
-    // Drain queue even on spawn error
-    if (session.agentQueue && session.agentQueue.length > 0) {
-      const next = session.agentQueue.shift();
-      setTimeout(() => spawnAgent(sessionId, next.prompt, next.userId, next.model), 1000);
     }
-  }
+  })();
 }
 
 // ─── Terminal ────────────────────────────────────────────
@@ -464,7 +368,24 @@ async function handleAPI(req, res, urlPath, method) {
   const send = (r) => { res.writeHead(r.status, r.headers); res.end(r.body); };
 
   // Routes
-  if (urlPath === "/health" && method === "GET") return send(json({ status: "ok", version: "0.2.0" }));
+  if (urlPath === "/health" && method === "GET") {
+    return send(json({
+      status: "ok",
+      version: "0.4.0",
+      agent: detectedAgents.find(a => a.available)?.id || "none",
+      agentsAvailable: detectedAgents.filter(a => a.available).map(a => a.id),
+    }));
+  }
+
+  // ─── Onboard Detection (cached at startup) ────────────
+  if (urlPath === "/api/onboard/detect" && method === "GET") {
+    return send(json({ ok: true, agents: detectedAgents, gitProviders: [], tools: [], ready: detectedAgents.some(a => a.available) }));
+  }
+
+  // ─── Available Agents (cached at startup) ─────────────
+  if (urlPath === "/api/agents" && method === "GET") {
+    return send(json({ agents: detectedAgents }));
+  }
 
   // ─── Git Provider Info ──────────────────────────────────
   if (urlPath === "/api/git/provider" && method === "GET") {
@@ -1192,12 +1113,18 @@ termWss.on("connection", (ws) => {
 });
 
 // ─── Start ───────────────────────────────────────────────
+const detectedAgents = detectAllAgents();
+const availableAgentNames = detectedAgents.filter(a => a.available).map(a => `${a.name} ✓`).join(", ");
+const unavailableAgentNames = detectedAgents.filter(a => !a.available).map(a => a.id).join(", ");
+
 server.listen(PORT, HOST, () => {
-  console.log(`\n  ⚡ MADE`);
+  console.log(`\n  ⚡ MADE v0.4.0`);
   console.log(`  Multiplayer Agentic Development Environment`);
   console.log(`  ─────────────────────────────`);
   console.log(`  http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}`);
   console.log(`  Project: ${PROJECT_DIR}`);
-  console.log(`  Agent: ${AGENT_CMD}`);
+  console.log(`  Config:  ${AGENT_CMD}`);
+  console.log(`  Agents:  ${availableAgentNames || "none detected"}`);
+  if (unavailableAgentNames) console.log(`  Missing: ${unavailableAgentNames}`);
   console.log(`  ─────────────────────────────\n`);
 });
