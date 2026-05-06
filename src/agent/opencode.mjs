@@ -28,7 +28,8 @@ export class OpenCodeAdapter extends AgentAdapter {
     const fullPrompt = AgentAdapter.buildContext(context.session, prompt);
 
     return new Promise((resolve, reject) => {
-      const proc = spawn("opencode", ["-p", fullPrompt], {
+      // opencode run "prompt" — don't pass --model, let opencode use its own default
+      const proc = spawn("opencode", ["run", fullPrompt], {
         cwd: this.workDir,
         env: { ...process.env },
         stdio: ["ignore", "pipe", "pipe"],
