@@ -169,7 +169,9 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
   broadcastToSession(sessionId, { type: "message", message: startMsg });
 
   // Build full conversation as context
-  const fullPrompt = buildConversationPrompt(session, prompt);
+  // GLM gets only the latest user prompt (history confuses it)
+  // Other agents (claude, codex) get full conversation context
+  const fullPrompt = AGENT_CMD === "glm" ? prompt : buildConversationPrompt(session, prompt);
 
   // Build agent command
   const modelFlags = {
@@ -216,12 +218,70 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
     }
 
     let buffer = "";
+    let fileCapture = null;  // Track file block capture for GLM
+    let fileBuffer = "";
+    let fileBlocks = [];     // Collected {path, content} for auto-write
+
     proc.stdout.on("data", (chunk) => {
       buffer += chunk.toString();
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
       for (const line of lines) {
         if (!line.trim()) continue;
+
+        // GLM file block detection: ```file:PATH
+        if (fileCapture) {
+          if (line.trim() === "```") {
+            // End of file block — write to disk
+            try {
+              const filePath = path.join(session.workDir, fileCapture);
+              fs.mkdirSync(path.dirname(filePath), { recursive: true });
+              fs.writeFileSync(filePath, fileBuffer);
+              fileBlocks.push(fileCapture);
+              const writeMsg = {
+                id: uid(), sessionId, userId: "system", userName: "MADE",
+                type: "agent_stream", content: `✅ Wrote ${fileCapture}`, timestamp: now(),
+              };
+              session.messages.push(writeMsg);
+              broadcastToSession(sessionId, { type: "message", message: writeMsg });
+            } catch (err) {
+              const errMsg = {
+                id: uid(), sessionId, userId: "system", userName: "MADE",
+                type: "agent_stream", content: `❌ Failed to write ${fileCapture}: ${err.message}`, timestamp: now(),
+              };
+              session.messages.push(errMsg);
+              broadcastToSession(sessionId, { type: "message", message: errMsg });
+            }
+            fileCapture = null;
+            fileBuffer = "";
+            continue;
+          } else {
+            fileBuffer += line + "\n";
+            // Still stream the line to UI so user sees what's happening
+            const streamMsg = {
+              id: uid(), sessionId, userId: "agent", userName: "Agent",
+              type: "agent_stream", content: line, timestamp: now(),
+            };
+            session.messages.push(streamMsg);
+            broadcastToSession(sessionId, { type: "message", message: streamMsg });
+            continue;
+          }
+        }
+
+        // Check for file block start
+        const fileMatch = line.match(/^```file:(.+)$/);
+        if (fileMatch) {
+          fileCapture = fileMatch[1].trim();
+          fileBuffer = "";
+          const startMsg = {
+            id: uid(), sessionId, userId: "system", userName: "MADE",
+            type: "agent_stream", content: `📝 Creating ${fileCapture}...`, timestamp: now(),
+          };
+          session.messages.push(startMsg);
+          broadcastToSession(sessionId, { type: "message", message: startMsg });
+          continue;
+        }
+
         const streamMsg = {
           id: uid(), sessionId, userId: "agent", userName: "Agent",
           type: "agent_stream", content: line, timestamp: now(),
