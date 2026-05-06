@@ -141,26 +141,37 @@ function buildConversationPrompt(session, userPrompt) {
 }
 
 // ─── Agent Execution (via Adapter Registry) ────────────
-function resolveAdapter(requestedModel) {
-  // If MADE_AGENT_CMD is set to a specific agent, use it
-  if (AGENT_CMD && AGENT_CMD !== "auto") {
-    return getAdapter(AGENT_CMD);
+function resolveAdapter(requestedAgent, requestedModel) {
+  // 1. If a specific agent was requested per-request, try it
+  if (requestedAgent && requestedAgent !== "auto") {
+    const adapter = getAdapter(requestedAgent);
+    if (adapter.detect().available) return adapter;
+    console.warn(`⚠ Requested agent "${requestedAgent}" not available, falling back`);
   }
-  // Otherwise, find the best available agent on this system
+
+  // 2. If MADE_AGENT_CMD is set and that agent is installed, use it
+  if (AGENT_CMD && AGENT_CMD !== "auto") {
+    const adapter = getAdapter(AGENT_CMD);
+    if (adapter.detect().available) return adapter;
+    console.warn(`⚠ MADE_AGENT_CMD="${AGENT_CMD}" not available, falling back`);
+  }
+
+  // 3. Find the best available agent on this system
   const best = findBestAgent();
   if (best) return best.adapter;
-  // Last resort: try whatever AGENT_CMD says
+
+  // 4. Last resort: try whatever was configured
   return getAdapter(AGENT_CMD || "claude");
 }
 
-function spawnAgent(sessionId, prompt, userId, model = "opus") {
+function spawnAgent(sessionId, prompt, userId, model = "opus", agentId = null) {
   const session = sessions.get(sessionId);
   if (!session) return;
 
   // If agent is already running, queue this request
   if (session.agentRunning) {
     if (!session.agentQueue) session.agentQueue = [];
-    session.agentQueue.push({ prompt, userId, model });
+    session.agentQueue.push({ prompt, userId, model, agentId });
     const queueMsg = {
       id: uid(), sessionId, userId: "system", userName: "MADE",
       type: "system", content: `Agent busy. Request queued (position: ${session.agentQueue.length})`,
@@ -177,13 +188,13 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
   const startMsg = {
     id: uid(), sessionId, userId: "system", userName: "MADE",
     type: "agent_start", content: prompt, timestamp: now(),
-    metadata: { model, triggeredBy: userId },
+    metadata: { model, agentId, triggeredBy: userId },
   };
   session.messages.push(startMsg);
   broadcastToSession(sessionId, { type: "message", message: startMsg });
 
   // Get the right adapter for this system
-  const adapter = resolveAdapter(model);
+  const adapter = resolveAdapter(agentId, model);
 
   // Stream callback — broadcasts each line to connected clients
   const onStream = ({ type: streamType, content: streamContent }) => {
@@ -246,7 +257,7 @@ function spawnAgent(sessionId, prompt, userId, model = "opus") {
       // Process next queued agent request
       if (session.agentQueue && session.agentQueue.length > 0) {
         const next = session.agentQueue.shift();
-        setTimeout(() => spawnAgent(sessionId, next.prompt, next.userId, next.model), 1000);
+        setTimeout(() => spawnAgent(sessionId, next.prompt, next.userId, next.model, next.agentId), 1000);
       }
     }
   })();
@@ -428,7 +439,7 @@ async function handleAPI(req, res, urlPath, method) {
   if (agentMatch && method === "POST") {
     const body = await parseBody(req);
     if (!body.prompt) return send(json({ error: "prompt required" }, 400));
-    spawnAgent(agentMatch[1], body.prompt, body.userId || "anon", body.model || "opus");
+    spawnAgent(agentMatch[1], body.prompt, body.userId || "anon", body.model || "opus", body.agentId || null);
     return send(json({ ok: true, message: "Agent started" }));
   }
 
@@ -587,8 +598,25 @@ async function handleAPI(req, res, urlPath, method) {
 
       // If repo specified, add remote and push
       if (repo) {
-        execSync(`git remote add origin ${repo} 2>/dev/null || true`, { cwd: s.workDir, stdio: "ignore" });
+        execSync(`git remote remove origin 2>/dev/null || true`, { cwd: s.workDir, stdio: "ignore" });
+        execSync(`git remote add origin ${repo}`, { cwd: s.workDir, stdio: "ignore" });
         execSync(`git push -u origin ${s.branch} 2>&1`, { cwd: s.workDir, encoding: "utf8" });
+      } else {
+        // Try to push to an existing remote
+        try {
+          execSync(`git push -u origin ${s.branch} 2>&1`, { cwd: s.workDir, encoding: "utf8" });
+        } catch (pushErr) {
+          // No remote or push failed — provide instructions
+          const host = req.headers.host || `localhost:${PORT}`;
+          const sessionUrl = `${req.headers['x-forwarded-proto'] || 'http'}://${host}/?session=${prMatch[1]}`;
+          return send(json({
+            ok: true,
+            prUrl: null,
+            message: `No remote configured. Push your branch first:\n  git remote add origin <your-repo-url>\n  git push -u origin ${s.branch}`,
+            provider: "local",
+            method: "manual",
+          }));
+        }
       }
 
       // Build MR body with session link
@@ -651,6 +679,18 @@ async function handleAPI(req, res, urlPath, method) {
 
   // ─── Message Edit ──────────────────────────────────────
   const msgEditMatch = urlPath.match(/^\/api\/sessions\/([^/]+)\/messages\/([^/]+)$/);
+
+  // ─── Message Get (single) ──────────────────────────────
+  if (msgEditMatch && method === "GET") {
+    const s = sessions.get(msgEditMatch[1]);
+    if (!s) return send(json({ error: "Not found" }, 404));
+    const msgId = msgEditMatch[2];
+    const msg = s.messages.find(m => m.id === msgId);
+    if (!msg) return send(json({ error: "Message not found" }, 404));
+    return send(json({ message: msg }));
+  }
+
+  // ─── Message Edit ─────────────────────────────────────
   if (msgEditMatch && method === "PUT") {
     const s = sessions.get(msgEditMatch[1]);
     if (!s) return send(json({ error: "Not found" }, 404));
@@ -697,7 +737,7 @@ async function handleAPI(req, res, urlPath, method) {
     const body = await parseBody(req);
     // Use agent to generate a plan
     const planPrompt = `Based on the following conversation, create a detailed implementation plan.\n\nConversation context:\n${buildConversationPrompt(s, body.prompt || "Create a plan for the current task")}\n\nOutput a clear, structured plan with numbered steps.`;
-    spawnAgent(genPlanMatch[1], planPrompt, body.userId || "anon", body.model || "opus");
+    spawnAgent(genPlanMatch[1], planPrompt, body.userId || "anon", body.model || "opus", body.agentId || null);
     return send(json({ ok: true, message: "Generating plan..." }));
   }
 
@@ -996,13 +1036,13 @@ wss.on("connection", (ws) => {
           }
           const model = data.model || "opus";
           setTimeout(() => {
-            spawnAgent(data.sessionId, agentPrompt, data.userId, model);
+            spawnAgent(data.sessionId, agentPrompt, data.userId, model, data.agentId || null);
           }, 500);
         }
       }
 
       if (data.type === "agent_prompt") {
-        spawnAgent(data.sessionId, data.prompt, data.userId, data.model || "opus");
+        spawnAgent(data.sessionId, data.prompt, data.userId, data.model || "opus", data.agentId || null);
       }
 
       // Plan editing awareness

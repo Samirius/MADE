@@ -149,5 +149,174 @@
       }
     ],
     "plan": null
+  },
+  "mu6ihsf5": {
+    "id": "mu6ihsf5",
+    "name": "Audit Test Session",
+    "branch": "made/mu6ihsf5-Audit-Test-Session",
+    "workDir": "/home/stark/ace-workspace/.sessions/mu6ihsf5",
+    "createdAt": 1778108403382,
+    "updatedAt": 1778108528587,
+    "createdBy": "r4cg9peq",
+    "agentRunning": false,
+    "lastCommit": "test commit from audit",
+    "summary": "",
+    "messages": [
+      {
+        "id": "l0bdscbf",
+        "sessionId": "mu6ihsf5",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "system",
+        "content": "Session \"Audit Test Session\" created. Branch: made/mu6ihsf5-Audit-Test-Session",
+        "timestamp": 1778108403383
+      },
+      {
+        "id": "vrp6w5i1",
+        "sessionId": "mu6ihsf5",
+        "userId": "anon",
+        "userName": "User",
+        "type": "terminal",
+        "content": "$ echo test123\ntest123\n",
+        "timestamp": 1778108426861,
+        "metadata": {
+          "exitCode": 0
+        }
+      },
+      {
+        "id": "9ysq4bku",
+        "sessionId": "mu6ihsf5",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "agent_start",
+        "content": "Create a file called hello.txt with the text Hello from MADE",
+        "timestamp": 1778108482902,
+        "metadata": {
+          "model": "opus",
+          "triggeredBy": "r4cg9peq"
+        }
+      },
+      {
+        "id": "r968b52b",
+        "sessionId": "mu6ihsf5",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "agent_done",
+        "content": "Agent error: spawn claude ENOENT",
+        "timestamp": 1778108482914
+      }
+    ],
+    "plan": {
+      "content": "",
+      "updatedAt": 1778108425257,
+      "updatedBy": "anon",
+      "title": "Plan"
+    }
+  },
+  "od5c2mjh": {
+    "id": "od5c2mjh",
+    "name": "Sam",
+    "branch": "made/od5c2mjh-Sam",
+    "workDir": "/home/stark/ace-workspace/.sessions/od5c2mjh",
+    "createdAt": 1778108409554,
+    "updatedAt": 1778108433243,
+    "createdBy": "hot6xyx7",
+    "agentRunning": false,
+    "lastCommit": null,
+    "summary": "",
+    "messages": [
+      {
+        "id": "nwzr1vr3",
+        "sessionId": "od5c2mjh",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "system",
+        "content": "Session \"Sam\" created. Branch: made/od5c2mjh-Sam",
+        "timestamp": 1778108409554
+      },
+      {
+        "id": "fc08d73t",
+        "sessionId": "od5c2mjh",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "agent_start",
+        "content": "hey",
+        "timestamp": 1778108426072,
+        "metadata": {
+          "model": "opus",
+          "triggeredBy": "hot6xyx7"
+        }
+      },
+      {
+        "id": "55vih6f0",
+        "sessionId": "od5c2mjh",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "agent_done",
+        "content": "Agent error: spawn claude ENOENT",
+        "timestamp": 1778108426352
+      },
+      {
+        "id": "0xpclrdr",
+        "sessionId": "od5c2mjh",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "agent_start",
+        "content": "hey",
+        "timestamp": 1778108433214,
+        "metadata": {
+          "model": "opus",
+          "triggeredBy": "hot6xyx7"
+        }
+      },
+      {
+        "id": "0vk2wkzf",
+        "sessionId": "od5c2mjh",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "agent_done",
+        "content": "Agent error: spawn claude ENOENT",
+        "timestamp": 1778108433242
+      }
+    ],
+    "plan": null
+  },
+  "b5joqtfg": {
+    "id": "b5joqtfg",
+    "name": "Bug Fix Test",
+    "branch": "made/b5joqtfg-Bug-Fix-Test",
+    "workDir": "/home/stark/ace-workspace/.sessions/b5joqtfg",
+    "createdAt": 1778109249395,
+    "updatedAt": 1778109249395,
+    "createdBy": "audit",
+    "agentRunning": false,
+    "lastCommit": null,
+    "summary": "",
+    "messages": [
+      {
+        "id": "vavxbu47",
+        "sessionId": "b5joqtfg",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "system",
+        "content": "Session \"Bug Fix Test\" created. Branch: made/b5joqtfg-Bug-Fix-Test",
+        "timestamp": 1778109249395
+      },
+      {
+        "id": "cvf7yfcq",
+        "sessionId": "b5joqtfg",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "agent_start",
+        "content": "echo hello",
+        "timestamp": 1778109249479,
+        "metadata": {
+          "model": "opus",
+          "agentId": null,
+          "triggeredBy": "audit"
+        }
+      }
+    ],
+    "plan": null
   }
 }
