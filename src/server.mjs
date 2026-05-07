@@ -20,8 +20,8 @@ const PORT = parseInt(process.env.MADE_PORT || process.env.ACE_PORT || "3000");
 const HOST = process.env.MADE_HOST || process.env.ACE_HOST || "0.0.0.0";
 const PROJECT_DIR = process.env.MADE_PROJECT_DIR || process.env.ACE_PROJECT_DIR || process.cwd();
 const AGENT_CMD = process.env.MADE_AGENT_CMD || process.env.ACE_AGENT_CMD || "claude";
-const AUTH_TOKEN = process.env.MADE_TOKEN || process.env.ACE_TOKEN || null; // If set (non-empty), all requests need ?token=X or Authorization header
-if (AUTH_TOKEN === "") { console.warn("⚠ MADE_TOKEN is empty string — auth disabled. Set a non-empty value to enable."); }
+const AUTH_TOKEN = process.env.MADE_TOKEN || process.env.ACE_TOKEN || null;
+if (!AUTH_TOKEN) { console.warn("⚠ WARNING: MADE_TOKEN not set — authentication disabled. Set MADE_TOKEN for production use."); }
 
 // ─── State ───────────────────────────────────────────────
 const sessions = loadSessions();
@@ -238,7 +238,7 @@ function spawnAgent(sessionId, prompt, userId, model = "opus", agentId = null) {
         });
         session.lastCommit = prompt.slice(0, 72);
         session.summary = prompt.slice(0, 100);
-      } catch {}
+      } catch (e) { console.error("Session cleanup error:", e); }
 
     } catch (err) {
       const errMsg = {
@@ -353,13 +353,16 @@ function parseBody(req) {
   return new Promise((resolve) => {
     let body = "";
     req.on("data", (c) => body += c);
-    req.on("end", () => { try { resolve(JSON.parse(body)); } catch { resolve({}); } });
+    req.on("end", () => { try { resolve(JSON.parse(body)); } catch { /* intentional: empty body defaults to {} */ resolve({}); } });
   });
 }
 
 async function handleAPI(req, res, urlPath, method) {
-  // CORS
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  // CORS — configurable origin (default: same-origin)
+  const corsOrigin = process.env.MADE_CORS_ORIGIN || process.env.ACE_CORS_ORIGIN || null;
+  if (corsOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", corsOrigin);
+  }
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
   if (method === "OPTIONS") { res.writeHead(204); res.end(); return; }
@@ -594,7 +597,7 @@ async function handleAPI(req, res, urlPath, method) {
     try {
       // Auto-commit first
       execSync("git add -A", { cwd: s.workDir, stdio: "ignore" });
-      try { execSync(`git commit -m ${JSON.stringify(title)} --no-gpg-sign --allow-empty`, { cwd: s.workDir, stdio: "ignore", env: { ...process.env, GIT_AUTHOR_NAME: "MADE", GIT_AUTHOR_EMAIL: "made@sabbk.com", GIT_COMMITTER_NAME: "MADE", GIT_COMMITTER_EMAIL: "made@sabbk.com" } }); } catch {}
+      try { execSync(`git commit -m ${JSON.stringify(title)} --no-gpg-sign --allow-empty`, { cwd: s.workDir, stdio: "ignore", env: { ...process.env, GIT_AUTHOR_NAME: "MADE", GIT_AUTHOR_EMAIL: "made@sabbk.com", GIT_COMMITTER_NAME: "MADE", GIT_COMMITTER_EMAIL: "made@sabbk.com" } }); } catch (e) { console.error("Git commit failed:", e.message); }
 
       // If repo specified, add remote and push
       if (repo) {
@@ -758,7 +761,7 @@ async function handleAPI(req, res, urlPath, method) {
     if (!boundary) return send(json({ error: "Missing boundary" }, 400));
 
     const MAX_SIZE = 5 * 1024 * 1024; // 5MB
-    const ALLOWED = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg"]);
+    const ALLOWED = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
 
     try {
       const chunks = [];
@@ -798,7 +801,7 @@ async function handleAPI(req, res, urlPath, method) {
         const ext = path.extname(fileName).slice(1).toLowerCase();
 
         if (!ALLOWED.has(ext)) {
-          return send(json({ error: `File type .${ext} not allowed. Supported: png, jpg, gif, webp, svg` }, 400));
+          return send(json({ error: `File type .${ext} not allowed. Supported: png, jpg, gif, webp` }, 400));
         }
 
         // Generate unique filename
@@ -844,7 +847,7 @@ async function handleAPI(req, res, urlPath, method) {
     if (!filePath.startsWith(s.workDir)) return send(json({ error: "Forbidden" }, 403));
     if (!fs.existsSync(filePath)) return send(json({ error: "Not found" }, 404));
     const ext = path.extname(filePath).slice(1).toLowerCase();
-    const types = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml" };
+    const types = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
     res.writeHead(200, { "Content-Type": types[ext] || "application/octet-stream", "Cache-Control": "public, max-age=86400" });
     fs.createReadStream(filePath).pipe(res);
     return;
@@ -1080,7 +1083,8 @@ server.on("upgrade", (req, socket, head) => {
   // Auth check for WebSocket
   if (AUTH_TOKEN) {
     const queryToken = url.searchParams.get("token");
-    if (queryToken !== AUTH_TOKEN) {
+    const headerToken = (req.headers.authorization || "").replace("Bearer ", "");
+    if (queryToken !== AUTH_TOKEN && headerToken !== AUTH_TOKEN) {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return;
@@ -1140,7 +1144,7 @@ termWss.on("connection", (ws) => {
           termState.proc.resize(msg.cols || 80, msg.rows || 24);
         }
       }
-    } catch {}
+    } catch (e) { console.error("Terminal input error:", e); }
   });
 
   ws.on("close", () => {

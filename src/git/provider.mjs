@@ -149,7 +149,7 @@ export function detectGitProvider(workDir) {
         cwd: workDir, encoding: "utf8", stdio: "pipe",
       }).trim();
       if (remote.includes("github.com")) return new GitHubProvider(workDir);
-    } catch {}
+    } catch (e) { console.error("Git provider detection error:", e.message); }
   }
 
   // Check for glab CLI + GitLab remote
@@ -161,7 +161,7 @@ export function detectGitProvider(workDir) {
         cwd: workDir, encoding: "utf8", stdio: "pipe",
       }).trim();
       if (remote.includes("gitlab.com") || remote.includes("gitlab")) return new GitLabProvider(workDir);
-    } catch {}
+    } catch (e) { console.error("Git provider detection error:", e.message); }
   }
 
   // Check remote URL for provider hints
@@ -173,7 +173,7 @@ export function detectGitProvider(workDir) {
     if (remote.includes("gitlab")) return new GitLabProvider(workDir);
     if (remote.includes("gitea") || remote.includes("forgejo")) return new GitProvider(workDir);
     if (remote.includes("bitbucket")) return new GitProvider(workDir);
-  } catch {}
+  } catch (e) { console.error("Git provider detection error:", e.message); }
 
   return new LocalProvider(workDir);
 }
