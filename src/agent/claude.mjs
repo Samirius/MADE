@@ -37,7 +37,8 @@ export class ClaudeAdapter extends AgentAdapter {
     return new Promise((resolve, reject) => {
       // Claude Code with --output-format stream-json for structured output
       const proc = spawn("claude", [
-        "--dangerously-skip-permissions",
+        // Only skip permissions when MADE_CLAUDE_UNSAFE=true
+        ...(process.env.MADE_CLAUDE_UNSAFE === "true" ? ["--dangerously-skip-permissions"] : []),
         "--model", modelName,
         "-p", fullPrompt,
         "--output-format", "stream-json",

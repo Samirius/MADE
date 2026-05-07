@@ -63,7 +63,7 @@ export class OpenCodeAdapter extends AgentAdapter {
               }
             }
             continue;
-          } catch {}
+          } catch (e) { console.error("OpenCode output parse error:", e); }
 
           onStream({ type: "stream", content: line });
         }

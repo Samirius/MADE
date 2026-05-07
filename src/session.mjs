@@ -51,7 +51,7 @@ export class SessionManager {
         cwd: workDir, stdio: "ignore",
         env: { ...process.env, GIT_AUTHOR_NAME: "MADE", GIT_AUTHOR_EMAIL: "made@sabbk.com", GIT_COMMITTER_NAME: "MADE", GIT_COMMITTER_EMAIL: "made@sabbk.com" },
       });
-    } catch {}
+    } catch (e) { console.error("Session state save error:", e); }
 
     const session = {
       id, name, branch, workDir,

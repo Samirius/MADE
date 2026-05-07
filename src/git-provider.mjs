@@ -32,7 +32,7 @@ function parseRemoteUrl(remoteUrl) {
       owner = parts[0];
       repo = parts.slice(1).join("/");
       protocol = u.protocol.replace(":", "");
-    } catch {
+    } catch (e) { console.error("Git provider exec error:", e.message);
       // Try file:// or local path
       return { host: null, owner: null, repo: null, protocol: "local", raw: remoteUrl };
     }
@@ -52,7 +52,7 @@ export function detectProvider(workdir) {
       encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],
     }).trim();
-  } catch {
+  } catch (e) { console.error("Git provider exec error:", e.message);
     return {
       provider: "local",
       remoteUrl: null,
@@ -155,7 +155,7 @@ function cliExists(cmd) {
   try {
     execSync(`which ${cmd} 2>/dev/null`, { encoding: "utf8", stdio: "pipe" });
     return true;
-  } catch {
+  } catch (e) { console.error("Git provider exec error:", e.message);
     return false;
   }
 }
