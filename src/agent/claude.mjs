@@ -5,12 +5,6 @@
 import { spawn } from "node:child_process";
 import { AgentAdapter } from "./adapter.mjs";
 
-const MODEL_MAP = {
-  opus: "claude-opus-4-20250514",
-  sonnet: "claude-sonnet-4-20250514",
-  haiku: "claude-haiku-4-20250514",
-};
-
 export class ClaudeAdapter extends AgentAdapter {
   get id() { return "claude"; }
   get name() { return "Claude Code"; }
@@ -25,22 +19,19 @@ export class ClaudeAdapter extends AgentAdapter {
     return { available: true, version };
   }
 
-  async start(workDir, opts = {}) {
+  async start(workDir, _opts = {}) {
     this.workDir = workDir;
-    this.model = opts.model || "opus";
+    // MADE does not pass model — Claude Code uses its own config
   }
 
   async send(prompt, context, onStream) {
-    const modelName = MODEL_MAP[this.model] || MODEL_MAP.opus;
     const fullPrompt = AgentAdapter.buildContext(context.session, prompt);
 
     return new Promise((resolve, reject) => {
-      // Claude Code with --output-format stream-json for structured output
+      // Claude Code one-shot mode: --print outputs to stdout, no model override
       const proc = spawn("claude", [
-        // Only skip permissions when MADE_CLAUDE_UNSAFE=true
         ...(process.env.MADE_CLAUDE_UNSAFE === "true" ? ["--dangerously-skip-permissions"] : []),
-        "--model", modelName,
-        "-p", fullPrompt,
+        "--print", fullPrompt,
         "--output-format", "stream-json",
       ], {
         cwd: this.workDir,

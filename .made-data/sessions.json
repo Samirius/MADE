@@ -493,5 +493,253 @@
       }
     ],
     "plan": null
+  },
+  "l9b6tgyx": {
+    "id": "l9b6tgyx",
+    "name": "test",
+    "branch": "made/l9b6tgyx-test",
+    "workDir": "/home/stark/ace-workspace/.sessions/l9b6tgyx",
+    "createdAt": 1778235494928,
+    "updatedAt": 1778235494928,
+    "createdBy": "anon",
+    "agentRunning": false,
+    "lastCommit": null,
+    "summary": "",
+    "messages": [
+      {
+        "id": "6rox7h7q",
+        "sessionId": "l9b6tgyx",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "system",
+        "content": "Session \"test\" created. Branch: made/l9b6tgyx-test",
+        "timestamp": 1778235494928
+      }
+    ],
+    "plan": null
+  },
+  "5z2fvv2e": {
+    "id": "5z2fvv2e",
+    "name": "NEW TEST",
+    "branch": "made/5z2fvv2e-NEW-TEST",
+    "workDir": "/home/stark/ace-workspace/.sessions/5z2fvv2e",
+    "createdAt": 1778236039910,
+    "updatedAt": 1778236039910,
+    "createdBy": "j4n6naui",
+    "agentRunning": false,
+    "lastCommit": null,
+    "summary": "",
+    "messages": [
+      {
+        "id": "rdtco45b",
+        "sessionId": "5z2fvv2e",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "system",
+        "content": "Session \"NEW TEST\" created. Branch: made/5z2fvv2e-NEW-TEST",
+        "timestamp": 1778236039910
+      },
+      {
+        "id": "9gafy21l",
+        "sessionId": "5z2fvv2e",
+        "userId": "j4n6naui",
+        "userName": "Samir",
+        "type": "chat",
+        "content": "hello",
+        "timestamp": 1778236049045
+      }
+    ],
+    "plan": null
+  },
+  "j6k6w6es": {
+    "id": "j6k6w6es",
+    "name": "NEw Tesdt",
+    "branch": "made/j6k6w6es-NEw-Tesdt",
+    "workDir": "/home/stark/ace-workspace/.sessions/j6k6w6es",
+    "createdAt": 1778247117488,
+    "updatedAt": 1778247117488,
+    "createdBy": "qsw9oqv4",
+    "agentRunning": false,
+    "lastCommit": null,
+    "summary": "",
+    "messages": [
+      {
+        "id": "nijxqucs",
+        "sessionId": "j6k6w6es",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "system",
+        "content": "Session \"NEw Tesdt\" created. Branch: made/j6k6w6es-NEw-Tesdt",
+        "timestamp": 1778247117489
+      },
+      {
+        "id": "1bubk8kx",
+        "sessionId": "j6k6w6es",
+        "userId": "qsw9oqv4",
+        "userName": "Samir",
+        "type": "chat",
+        "content": "hello",
+        "timestamp": 1778247122518
+      },
+      {
+        "id": "3dvs3o6u",
+        "sessionId": "j6k6w6es",
+        "userId": "qsw9oqv4",
+        "userName": "Samir",
+        "type": "chat",
+        "content": "we aretesting the thing now",
+        "timestamp": 1778247129309
+      },
+      {
+        "id": "8renh56z",
+        "sessionId": "j6k6w6es",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "agent_start",
+        "content": "can you applyu something or reply?",
+        "timestamp": 1778247139201,
+        "metadata": {
+          "model": "opus",
+          "agentId": null,
+          "triggeredBy": "qsw9oqv4"
+        }
+      },
+      {
+        "id": "kc6azfgz",
+        "sessionId": "j6k6w6es",
+        "userId": "agent",
+        "userName": "Agent",
+        "type": "agent_stream",
+        "content": "\u001b[0m",
+        "timestamp": 1778247161482
+      },
+      {
+        "id": "3ic17ies",
+        "sessionId": "j6k6w6es",
+        "userId": "agent",
+        "userName": "Agent",
+        "type": "agent_stream",
+        "content": "\n> build · glm-5v-turbo\n\u001b[0m\n",
+        "timestamp": 1778247161496
+      }
+    ],
+    "plan": null
+  },
+  "9ngk1vlc": {
+    "id": "9ngk1vlc",
+    "name": "test-agent",
+    "branch": "made/9ngk1vlc-test-agent",
+    "workDir": "/home/stark/ace-workspace/.sessions/9ngk1vlc",
+    "createdAt": 1778247332350,
+    "updatedAt": 1778247332350,
+    "createdBy": "debug",
+    "agentRunning": false,
+    "lastCommit": null,
+    "summary": "",
+    "messages": [
+      {
+        "id": "i499lfoq",
+        "sessionId": "9ngk1vlc",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "system",
+        "content": "Session \"test-agent\" created. Branch: made/9ngk1vlc-test-agent",
+        "timestamp": 1778247332350
+      },
+      {
+        "id": "foecbwpi",
+        "sessionId": "9ngk1vlc",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "agent_start",
+        "content": "say hello",
+        "timestamp": 1778247332718,
+        "metadata": {
+          "model": "opus",
+          "agentId": "hermes",
+          "triggeredBy": "debug"
+        }
+      }
+    ],
+    "plan": null
+  },
+  "p07al9u8": {
+    "id": "p07al9u8",
+    "name": "new idea",
+    "branch": "made/p07al9u8-new-idea",
+    "workDir": "/home/stark/ace-workspace/.sessions/p07al9u8",
+    "createdAt": 1778247637695,
+    "updatedAt": 1778247637695,
+    "createdBy": "20ujtu5x",
+    "agentRunning": false,
+    "lastCommit": null,
+    "summary": "",
+    "messages": [
+      {
+        "id": "v9i3gejv",
+        "sessionId": "p07al9u8",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "system",
+        "content": "Session \"new idea\" created. Branch: made/p07al9u8-new-idea",
+        "timestamp": 1778247637695
+      },
+      {
+        "id": "m4g1z6p7",
+        "sessionId": "p07al9u8",
+        "userId": "20ujtu5x",
+        "userName": "Samir",
+        "type": "chat",
+        "content": "hello",
+        "timestamp": 1778247642963
+      },
+      {
+        "id": "zvlei9k0",
+        "sessionId": "p07al9u8",
+        "userId": "20ujtu5x",
+        "userName": "Samir",
+        "type": "chat",
+        "content": "we are having fun",
+        "timestamp": 1778247648467
+      }
+    ],
+    "plan": null
+  },
+  "bn0fuxof": {
+    "id": "bn0fuxof",
+    "name": "hermes-test",
+    "branch": "made/bn0fuxof-hermes-test",
+    "workDir": "/home/stark/ace-workspace/.sessions/bn0fuxof",
+    "createdAt": 1778250619652,
+    "updatedAt": 1778250619652,
+    "createdBy": "debug",
+    "agentRunning": false,
+    "lastCommit": null,
+    "summary": "",
+    "messages": [
+      {
+        "id": "wp10y78f",
+        "sessionId": "bn0fuxof",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "system",
+        "content": "Session \"hermes-test\" created. Branch: made/bn0fuxof-hermes-test",
+        "timestamp": 1778250619652
+      },
+      {
+        "id": "cw5i1hdh",
+        "sessionId": "bn0fuxof",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "agent_start",
+        "content": "say hello in exactly 3 words",
+        "timestamp": 1778250620594,
+        "metadata": {
+          "agentId": "hermes",
+          "triggeredBy": "debug"
+        }
+      }
+    ],
+    "plan": null
   }
 }

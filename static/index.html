@@ -176,13 +176,68 @@ function connectWS() {
 }
 
 // ─── User Setup ──────────────────────────────────────────
+let _agentsCache = null
+
+async function fetchAgents() {
+  if (_agentsCache) return _agentsCache
+  try {
+    const data = await api('/api/agents')
+    _agentsCache = data.agents || data
+    return _agentsCache
+  } catch (e) {
+    console.warn('Failed to fetch agents:', e)
+    return []
+  }
+}
+
 async function setupUser() {
-  const name = localStorage.getItem('made_user_name') || localStorage.getItem('ace_user_name') || prompt('Your name:') || 'User';
-  localStorage.setItem('made_user_name', name);
-  state.userName = name;
-  const user = await api('/api/users', { method: 'POST', body: JSON.stringify({ name }) });
-  state.userId = user.id;
-  document.getElementById('user-name').textContent = name;
+  const stored = localStorage.getItem('made_user_name') || localStorage.getItem('ace_user_name')
+  if (stored) {
+    state.userName = stored
+    const user = await api('/api/users', { method: 'POST', body: JSON.stringify({ name: stored }) })
+    state.userId = user.id
+    document.getElementById('user-name').textContent = stored
+    return
+  }
+  // Show onboarding modal
+  return new Promise((resolve) => {
+    const modal = document.getElementById('modal')
+    const content = document.getElementById('modal-content')
+    content.className = 'modal'
+    content.innerHTML = `
+      <div class="onboarding-welcome">
+        <div style="font-size:48px;margin-bottom:12px">⚡</div>
+        <div class="onboarding-heading">Welcome to MADE</div>
+        <p>Multiplayer Agentic Development Environment</p>
+        <div class="form-group">
+          <label>Your Name</label>
+          <input type="text" id="onboarding-name" placeholder="Enter your name..." autofocus
+            onkeydown="if(event.key==='Enter')document.getElementById('onboarding-submit').click()">
+        </div>
+        <button class="btn btn-primary" id="onboarding-submit">Get Started</button>
+      </div>
+    `
+    modal.style.display = 'flex'
+
+    document.getElementById('onboarding-submit').onclick = async () => {
+      const name = document.getElementById('onboarding-name')?.value?.trim()
+      if (!name) {
+        document.getElementById('onboarding-name').style.borderColor = 'var(--red)'
+        return
+      }
+      localStorage.setItem('made_user_name', name)
+      state.userName = name
+      try {
+        const user = await api('/api/users', { method: 'POST', body: JSON.stringify({ name }) })
+        state.userId = user.id
+      } catch (e) {
+        console.error('User creation failed:', e)
+      }
+      document.getElementById('user-name').textContent = name
+      modal.style.display = 'none'
+      resolve()
+    }
+  })
 }
 
 // ─── Sessions ────────────────────────────────────────────
@@ -305,6 +360,7 @@ async function openSession(id) {
         <div class="input-area">
           <div class="input-box" style="position:relative">
             <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
+              <div class="agent-selector-wrap" id="agent-selector-wrap"></div>
               <button class="mode-btn ${state.inputMode==='chat'?'active':''}" onclick="setInputMode('chat')" id="mode-chat">💬 Chat</button>
               <button class="mode-btn ${state.inputMode==='ace'?'active':''}" onclick="setInputMode('ace')" id="mode-ace">✦ Agent</button>
               <span style="color:var(--text-dim);font-size:10px;margin-left:4px">Tab to switch</span>
@@ -315,11 +371,6 @@ async function openSession(id) {
             <div class="input-actions">
               <button class="file-attach-btn" onclick="document.getElementById('file-upload-input').click()" title="Attach image">📎</button>
               <input type="file" id="file-upload-input" accept="image/*" style="display:none" onchange="handleFileUpload(this)">
-              <select class="model-select" id="model-select">
-                <option value="opus">Opus</option>
-                <option value="sonnet">Sonnet</option>
-                <option value="haiku">Haiku</option>
-              </select>
               <button class="send-btn" onclick="sendChat()" title="Send">▶</button>
             </div>
             <div id="autocomplete-dropdown" class="autocomplete-dropdown" style="display:none"></div>
@@ -356,6 +407,9 @@ async function openSession(id) {
 
   // Setup paste handler for image uploads
   setupPasteHandler();
+
+  // Initialize agent selector in input area
+  initAgentSelector()
 }
 
 function appendMessage(m, scroll = true) {
@@ -669,7 +723,7 @@ function renderInlineContent(content) {
     // Skip URLs
     if (path.match(/^(https?|ftp|mailto):/i)) return match;
     // Only match plausible file paths (must contain / or known extension)
-    const exts = /\.(js|jsx|ts|tsx|mjs|cjs|py|html|css|json|md|yaml|yml|toml|sh|bash|zsh|rs|go|rb|java|c|cpp|h|hpp|vue|svelte|sql|txt|cfg|conf|ini|env|gitignore|dockerfile|makefile|lock|svg|xml|graphql|gql|prisma|wasm|bat|ps1|php|swift|kt|dart|lua|r|pl|ex|exs|hs|elm|clj|scala|cl$/i;
+    const exts = /\.(js|jsx|ts|tsx|mjs|cjs|py|html|css|json|md|yaml|yml|toml|sh|bash|zsh|rs|go|rb|java|c|cpp|h|hpp|vue|svelte|sql|txt|cfg|conf|ini|env|gitignore|dockerfile|makefile|lock|svg|xml|graphql|gql|prisma|wasm|bat|ps1|php|swift|kt|dart|lua|r|pl|ex|exs|hs|elm|clj|scala|cl)$/i;
     if (!path.includes('/') && !exts.test(path)) return match;
     // Skip common non-file words
     const skip = ['the','and','for','not','you','are','can','has','was','will','but','this','that','with','from','they','been','have','were','said','each','which','their','would','there','could','other','than','into','more','about','up','out','many','then','them','these','some','her','would','make','like','time','very','when','come','could','no','just','know','take','people','year','your','good','some','also','look','only','come','think','back','after','work','first','well'];
@@ -985,6 +1039,79 @@ function setupPasteHandler() {
   });
 }
 
+// ─── Agent Selector (in chat input) ─────────────────────
+let _selectedAgentId = null
+
+async function initAgentSelector() {
+  const wrap = document.getElementById('agent-selector-wrap')
+  if (!wrap) return
+
+  const agents = await fetchAgents()
+  const available = agents.filter(a => a.available !== false)
+
+  if (available.length === 0) {
+    wrap.innerHTML = ''
+    return
+  }
+
+  _selectedAgentId = null
+
+  if (available.length === 1) {
+    // Single agent: show as badge
+    wrap.innerHTML = `
+      <span class="agent-selector-badge">🤖 ${escHtml(available[0].name)}</span>
+    `
+    _selectedAgentId = available[0].id
+    return
+  }
+
+  // Multiple agents: show as dropdown
+  wrap.innerHTML = `
+    <button class="agent-selector-btn" id="agent-selector-toggle" onclick="toggleAgentDropdown(event)">
+      🤖 <span id="agent-selector-label">Auto</span> ▾
+    </button>
+    <div class="agent-selector-dropdown" id="agent-selector-dropdown">
+      <div class="agent-selector-option selected" onclick="pickAgent(null, event)">Auto-select</div>
+      ${available.map(a => `<div class="agent-selector-option" onclick="pickAgent('${a.id}', event)">${escHtml(a.name)}</div>`).join('')}
+    </div>
+  `
+}
+
+function toggleAgentDropdown(e) {
+  e.stopPropagation()
+  const dd = document.getElementById('agent-selector-dropdown')
+  if (dd) dd.classList.toggle('open')
+}
+
+function pickAgent(agentId, e) {
+  e.stopPropagation()
+  _selectedAgentId = agentId
+  const dd = document.getElementById('agent-selector-dropdown')
+  const label = document.getElementById('agent-selector-label')
+  if (dd) dd.classList.remove('open')
+
+  const allAgents = _agentsCache || []
+  if (agentId === null) {
+    if (label) label.textContent = 'Auto'
+  } else {
+    const agent = allAgents.find(a => a.id === agentId)
+    if (label) label.textContent = agent ? agent.name : agentId
+  }
+
+  // Update selected state
+  const opts = document.querySelectorAll('.agent-selector-option')
+  opts.forEach((opt, i) => {
+    const expectedId = i === 0 ? null : allAgents[i - 1]?.id
+    opt.classList.toggle('selected', expectedId === agentId)
+  })
+}
+
+// Close agent dropdown on outside click
+document.addEventListener('click', () => {
+  const dd = document.getElementById('agent-selector-dropdown')
+  if (dd) dd.classList.remove('open')
+})
+
 function setInputMode(mode) {
   state.inputMode = mode;
   const chatBtn = document.getElementById('mode-chat');
@@ -1028,10 +1155,9 @@ function sendChat() {
   }
 
   // Regular chat
-  const model = document.getElementById('model-select')?.value || 'opus';
   state.ws.send(JSON.stringify({
     type: 'chat', sessionId: state.activeSession, userId: state.userId,
-    userName: state.userName, content: text, model,
+    userName: state.userName, content: text,
   }));
   input.value = '';
   input.style.height = 'auto';
@@ -1056,10 +1182,11 @@ function promptAgent() {
 }
 
 function promptAgentWithText(prompt) {
-  const model = document.getElementById('model-select')?.value || 'opus';
+  const body = { prompt, userId: state.userId }
+  if (_selectedAgentId) body.agentId = _selectedAgentId
   api(`/api/sessions/${state.activeSession}/agent`, {
     method: 'POST',
-    body: JSON.stringify({ prompt, userId: state.userId, model }),
+    body: JSON.stringify(body),
   });
   closeModal();
 }
@@ -1099,35 +1226,406 @@ async function runTermCmd() {
 }
 
 function showNewSessionModal() {
-  document.getElementById('modal-content').innerHTML = `
-    <h2>+ New Session</h2>
-    <p style="color:var(--text-dim);font-size:13px;margin-bottom:12px">Each session gets its own git branch and workspace.</p>
-    <div class="form-group">
-      <label>Session Name</label>
-      <input type="text" id="new-session-name" placeholder="feature/auth-flow" autofocus
-        onkeydown="if(event.key==='Enter')createSession()">
+  const modal = document.getElementById('modal')
+  const content = document.getElementById('modal-content')
+  content.className = 'modal modal-wide'
+
+  // Wizard state
+  window._wiz = {
+    step: 1,
+    totalSteps: 4,
+    name: '',
+    description: '',
+    projectType: 'fresh',  // 'local' | 'clone' | 'fresh'
+    localPath: '',
+    cloneUrl: '',
+    cloneToken: '',
+    agentId: null,          // null = auto-select
+    agents: []
+  }
+
+  renderWizardStep()
+  modal.style.display = 'flex'
+}
+
+function renderWizardStep() {
+  const w = window._wiz
+  if (!w) return
+  const content = document.getElementById('modal-content')
+
+  // Progress dots
+  let dots = ''
+  for (let i = 1; i <= w.totalSteps; i++) {
+    const cls = i < w.step ? 'done' : i === w.step ? 'active' : ''
+    dots += `<div class="wizard-dot ${cls}"></div>`
+  }
+
+  let stepHtml = ''
+  if (w.step === 1) stepHtml = renderWizardStep1()
+  else if (w.step === 2) stepHtml = renderWizardStep2()
+  else if (w.step === 3) stepHtml = renderWizardStep3()
+  else if (w.step === 4) stepHtml = renderWizardStep4()
+
+  const isFirst = w.step === 1
+  const isLast = w.step === w.totalSteps
+
+  content.innerHTML = `
+    <div class="wizard-progress">
+      ${dots}
+      <span class="wizard-step-label">${w.step}/${w.totalSteps}</span>
     </div>
-    <div class="modal-actions">
-      <button class="btn" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="createSession()">Create</button>
+    ${stepHtml}
+    <div class="wizard-nav">
+      <button class="btn" ${isFirst ? 'style="visibility:hidden"' : ''} onclick="wizardPrev()">← Back</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="closeModal()">Cancel</button>
+        ${isLast
+          ? '<button class="btn btn-primary" onclick="wizardCreate()">🚀 Create Session</button>'
+          : '<button class="btn btn-primary" onclick="wizardNext()">Next →</button>'}
+      </div>
     </div>
-  `;
-  document.getElementById('modal').style.display = 'flex';
-  setTimeout(() => document.getElementById('new-session-name')?.focus(), 100);
+  `
+
+  // Bind step-specific handlers
+  if (w.step === 1) bindStep1()
+  else if (w.step === 2) bindStep2()
+  else if (w.step === 3) bindStep3()
+}
+
+// ─── Step 1: What are you working on? ───
+function renderWizardStep1() {
+  const w = window._wiz
+  return `
+    <div class="wizard-step active">
+      <div class="onboarding-heading">What are you working on?</div>
+      <div class="onboarding-sub">Give your session a name and optional description.</div>
+      <div class="form-group">
+        <label>Session Name</label>
+        <input type="text" id="wiz-name" placeholder="feature/auth-flow" value="${escHtml(w.name)}"
+          autofocus>
+      </div>
+      <div class="form-group">
+        <label>Description <span style="color:var(--text-dim)">(optional)</span></label>
+        <input type="text" id="wiz-desc" placeholder="Add login and signup pages"
+          value="${escHtml(w.description)}">
+      </div>
+    </div>
+  `
+}
+
+function bindStep1() {
+  const nameEl = document.getElementById('wiz-name')
+  const descEl = document.getElementById('wiz-desc')
+  if (nameEl) {
+    nameEl.focus()
+    nameEl.addEventListener('input', () => { window._wiz.name = nameEl.value })
+    nameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') wizardNext() })
+  }
+  if (descEl) descEl.addEventListener('input', () => { window._wiz.description = descEl.value })
+}
+
+// ─── Step 2: Connect your project ───
+function renderWizardStep2() {
+  const w = window._wiz
+  return `
+    <div class="wizard-step active">
+      <div class="onboarding-heading">Connect your project</div>
+      <div class="onboarding-sub">How do you want to set up the workspace?</div>
+      <div class="radio-cards">
+        <label class="radio-card ${w.projectType === 'fresh' ? 'selected' : ''}" onclick="selectProjectType('fresh')">
+          <input type="radio" name="wiz-project" value="fresh" ${w.projectType === 'fresh' ? 'checked' : ''}>
+          <div class="radio-card-body">
+            <div class="radio-card-title">✨ Start fresh</div>
+            <div class="radio-card-desc">Create a blank workspace with no existing project.</div>
+          </div>
+        </label>
+        <label class="radio-card ${w.projectType === 'local' ? 'selected' : ''}" onclick="selectProjectType('local')">
+          <input type="radio" name="wiz-project" value="local" ${w.projectType === 'local' ? 'checked' : ''}>
+          <div class="radio-card-body">
+            <div class="radio-card-title">📁 Local directory</div>
+            <div class="radio-card-desc">Use an existing directory on the server.</div>
+          </div>
+        </label>
+        <label class="radio-card ${w.projectType === 'clone' ? 'selected' : ''}" onclick="selectProjectType('clone')">
+          <input type="radio" name="wiz-project" value="clone" ${w.projectType === 'clone' ? 'checked' : ''}>
+          <div class="radio-card-body">
+            <div class="radio-card-title">🔗 Clone from URL</div>
+            <div class="radio-card-desc">Clone a git repository into the workspace.</div>
+          </div>
+        </label>
+      </div>
+      <div id="wiz-project-extra"></div>
+    </div>
+  `
+}
+
+function bindStep2() {
+  showProjectExtra()
+}
+
+function selectProjectType(type) {
+  window._wiz.projectType = type
+  document.querySelectorAll('.radio-card').forEach(c => {
+    const radio = c.querySelector('input[type="radio"]')
+    c.classList.toggle('selected', radio && radio.value === type)
+  })
+  showProjectExtra()
+}
+
+function showProjectExtra() {
+  const w = window._wiz
+  const extra = document.getElementById('wiz-project-extra')
+  if (!extra) return
+
+  if (w.projectType === 'local') {
+    extra.innerHTML = `
+      <div class="wizard-sub-input">
+        <input type="text" id="wiz-local-path" placeholder="/home/user/my-project"
+          value="${escHtml(w.localPath)}">
+        <div class="hint">Absolute path. Use ~ for home directory.</div>
+      </div>
+    `
+    const el = document.getElementById('wiz-local-path')
+    if (el) el.addEventListener('input', () => { w.localPath = el.value })
+  } else if (w.projectType === 'clone') {
+    extra.innerHTML = `
+      <div class="wizard-sub-input">
+        <input type="text" id="wiz-clone-url" placeholder="https://github.com/org/repo.git"
+          value="${escHtml(w.cloneUrl)}">
+        <div class="hint">Git clone URL (HTTPS or SSH)</div>
+      </div>
+      <div class="wizard-sub-input" style="margin-top:6px">
+        <input type="text" id="wiz-clone-token" placeholder="Personal access token (optional)"
+          value="${escHtml(w.cloneToken)}">
+        <div class="hint">Leave empty for public repos.</div>
+      </div>
+    `
+    const urlEl = document.getElementById('wiz-clone-url')
+    const tokEl = document.getElementById('wiz-clone-token')
+    if (urlEl) urlEl.addEventListener('input', () => { w.cloneUrl = urlEl.value })
+    if (tokEl) tokEl.addEventListener('input', () => { w.cloneToken = tokEl.value })
+  } else {
+    extra.innerHTML = ''
+  }
+}
+
+// ─── Step 3: Choose your agent ───
+function renderWizardStep3() {
+  const w = window._wiz
+  return `
+    <div class="wizard-step active">
+      <div class="onboarding-heading">Choose your agent</div>
+      <div class="onboarding-sub">Select which AI agent will power this session.</div>
+      <div id="wiz-agent-cards">
+        <div style="color:var(--text-dim);font-size:13px">Loading agents...</div>
+      </div>
+    </div>
+  `
+}
+
+function bindStep3() {
+  loadAgentCards()
+}
+
+async function loadAgentCards() {
+  const w = window._wiz
+  const container = document.getElementById('wiz-agent-cards')
+  if (!container) return
+
+  const agents = await fetchAgents()
+  w.agents = agents
+
+  const available = agents.filter(a => a.available !== false)
+  if (available.length === 0) {
+    container.innerHTML = `
+      <div class="agent-cards">
+        <div class="agent-card selected" onclick="selectAgentCard(null)">
+          <div class="agent-card-name">🤖 Auto-select</div>
+          <div class="agent-card-version">Default agent will be used</div>
+        </div>
+      </div>
+      <div style="color:var(--text-dim);font-size:11px;margin-top:8px">No agents currently available. The default agent will be used.</div>
+    `
+    w.agentId = null
+    return
+  }
+
+  let html = `<div class="agent-cards">
+    <div class="agent-card ${w.agentId === null ? 'selected' : ''}" onclick="selectAgentCard(null)">
+      <div class="agent-card-name">🤖 Auto-select</div>
+      <div class="agent-card-version">Let the system choose</div>
+    </div>`
+
+  for (const agent of agents) {
+    const sel = w.agentId === agent.id ? 'selected' : ''
+    const unavail = agent.available === false ? 'unavailable' : ''
+    html += `
+      <div class="agent-card ${sel} ${unavail}" onclick="${agent.available !== false ? `selectAgentCard('${agent.id}')` : ''}">
+        <div class="agent-card-name">${escHtml(agent.name)}</div>
+        <div class="agent-card-version">${agent.version ? 'v' + escHtml(agent.version) : 'Available'}</div>
+      </div>
+    `
+  }
+
+  html += '</div>'
+  container.innerHTML = html
+}
+
+function selectAgentCard(agentId) {
+  window._wiz.agentId = agentId
+  document.querySelectorAll('.agent-card').forEach(c => c.classList.remove('selected'))
+  // Re-find the right card
+  const cards = document.querySelectorAll('.agent-card')
+  if (agentId === null) {
+    if (cards[0]) cards[0].classList.add('selected')
+  } else {
+    const w = window._wiz
+    const idx = w.agents.findIndex(a => a.id === agentId)
+    if (idx >= 0 && cards[idx + 1]) cards[idx + 1].classList.add('selected')
+  }
+}
+
+// ─── Step 4: Summary ───
+function renderWizardStep4() {
+  const w = window._wiz
+  const projLabel = w.projectType === 'fresh' ? 'Start fresh (blank workspace)'
+    : w.projectType === 'local' ? `Local: ${w.localPath || '(not set)'}`
+    : `Clone: ${w.cloneUrl || '(not set)'}`
+
+  const agentLabel = w.agentId === null ? 'Auto-select'
+    : (w.agents.find(a => a.id === w.agentId)?.name || w.agentId)
+
+  return `
+    <div class="wizard-step active">
+      <div class="onboarding-heading">Ready to go!</div>
+      <div class="onboarding-sub">Review your session setup before creating.</div>
+      <div style="margin-top:12px">
+        <div class="summary-row">
+          <span class="summary-label">Name</span>
+          <span class="summary-value">${escHtml(w.name || 'Untitled Session')}</span>
+        </div>
+        ${w.description ? `<div class="summary-row">
+          <span class="summary-label">Description</span>
+          <span class="summary-value">${escHtml(w.description)}</span>
+        </div>` : ''}
+        <div class="summary-row">
+          <span class="summary-label">Project</span>
+          <span class="summary-value">${escHtml(projLabel)}</span>
+        </div>
+        <div class="summary-row">
+          <span class="summary-label">Agent</span>
+          <span class="summary-value">${escHtml(agentLabel)}</span>
+        </div>
+      </div>
+    </div>
+  `
+}
+
+function wizardPrev() {
+  const w = window._wiz
+  if (w.step > 1) {
+    w.step--
+    renderWizardStep()
+  }
+}
+
+function wizardNext() {
+  const w = window._wiz
+  // Step 1 validation
+  if (w.step === 1) {
+    w.name = document.getElementById('wiz-name')?.value?.trim() || ''
+    w.description = document.getElementById('wiz-desc')?.value?.trim() || ''
+    if (!w.name) {
+      const el = document.getElementById('wiz-name')
+      if (el) el.style.borderColor = 'var(--red)'
+      return
+    }
+  }
+  // Step 2: save values + validate
+  if (w.step === 2) {
+    if (w.projectType === 'local') {
+      w.localPath = document.getElementById('wiz-local-path')?.value?.trim() || ''
+      if (!w.localPath) {
+        const el = document.getElementById('wiz-local-path')
+        if (el) { el.style.borderColor = 'var(--red)'; el.focus() }
+        return
+      }
+    } else if (w.projectType === 'clone') {
+      w.cloneUrl = document.getElementById('wiz-clone-url')?.value?.trim() || ''
+      w.cloneToken = document.getElementById('wiz-clone-token')?.value?.trim() || ''
+      if (!w.cloneUrl) {
+        const el = document.getElementById('wiz-clone-url')
+        if (el) { el.style.borderColor = 'var(--red)'; el.focus() }
+        return
+      }
+      if (!w.cloneUrl.match(/^https?:\/\/|^git@|^ssh:\/\//)) {
+        const el = document.getElementById('wiz-clone-url')
+        if (el) { el.style.borderColor = 'var(--red)'; el.focus() }
+        alert('Please enter a valid git URL (https://, git@, or ssh://)')
+        return
+      }
+    }
+    // "fresh" needs no validation
+  }
+  if (w.step < w.totalSteps) {
+    w.step++
+    renderWizardStep()
+  }
+}
+
+async function wizardCreate() {
+  const w = window._wiz
+  const name = w.name || 'New Session'
+  try {
+    const body = { name, userId: state.userId }
+    if (w.description) body.description = w.description
+    if (w.agentId) body.agentId = w.agentId
+
+    // Handle project source
+    if (w.projectType === 'local' && w.localPath) {
+      body.workDir = w.localPath
+    } else if (w.projectType === 'clone' && w.cloneUrl) {
+      body.cloneUrl = w.cloneUrl
+      if (w.cloneToken) body.token = w.cloneToken
+    }
+
+    const session = await api('/api/sessions', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+    closeModal()
+    await loadSessions()
+    openSession(session.id)
+  } catch (err) {
+    console.error('Failed to create session:', err)
+    alert('Failed to create session: ' + err.message)
+  }
 }
 
 async function createSession() {
-  const name = document.getElementById('new-session-name')?.value || 'New Session';
-  const session = await api('/api/sessions', {
-    method: 'POST',
-    body: JSON.stringify({ name, userId: state.userId }),
-  });
-  closeModal();
-  await loadSessions();
-  openSession(session.id);
+  // Legacy fallback — used if wizard is somehow not initialized
+  const name = document.getElementById('new-session-name')?.value || 'New Session'
+  try {
+    const session = await api('/api/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ name, userId: state.userId }),
+    })
+    closeModal()
+    await loadSessions()
+    openSession(session.id)
+  } catch (err) {
+    console.error('Failed to create session:', err)
+    alert('Failed to create session: ' + err.message)
+  }
 }
 
-function closeModal() { document.getElementById('modal').style.display = 'none'; }
+function closeModal() {
+  document.getElementById('modal').style.display = 'none'
+  const content = document.getElementById('modal-content')
+  if (content) content.className = 'modal'
+  window._wiz = null
+  _agentsCache = null
+}
 
 // ─── Dashboard ───────────────────────────────────────────
 async function showDashboard() {

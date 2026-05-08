@@ -41,10 +41,9 @@ export class GenericAdapter extends AgentAdapter {
     };
   }
 
-  async start(workDir, opts = {}) {
+  async start(workDir, _opts = {}) {
     this.workDir = workDir;
-    this.model = opts.model;
-    // No persistent process — we spawn per-request
+    // MADE does not pass model — adapters manage their own model config
   }
 
   async send(prompt, context, onStream) {
@@ -54,10 +53,6 @@ export class GenericAdapter extends AgentAdapter {
         : prompt;
 
       const args = [...this.args];
-      // Add model arg if needed
-      if (this.model && !args.some(a => a.includes("model"))) {
-        args.push("--model", this.model);
-      }
 
       const proc = spawn(this.cmd, args, {
         cwd: this.workDir,
@@ -178,12 +173,8 @@ export class GLMAdapter extends GenericAdapter {
   }
 
   async send(prompt, context, onStream) {
-    // Override model based on session model setting
-    if (context.model === "haiku") {
-      this.args = [this.args[0], "--model", "glm-4-flash"];
-    } else {
-      this.args = [this.args[0], "--model", "glm-5.1"];
-    }
+    // GLM adapter always uses its own default model (glm-5.1).
+    // MADE is a workspace — it does not choose models for agents.
     return super.send(prompt, context, onStream);
   }
 }

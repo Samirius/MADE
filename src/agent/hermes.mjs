@@ -19,18 +19,18 @@ export class HermesAdapter extends AgentAdapter {
     return { available: true, version };
   }
 
-  async start(workDir, opts = {}) {
+  async start(workDir, _opts = {}) {
     this.workDir = workDir;
-    this.model = opts.model;
+    // MADE does not pass model — Hermes uses its own config (~/.hermes/config.yaml)
   }
 
   async send(prompt, context, onStream) {
     const fullPrompt = AgentAdapter.buildContext(context.session, prompt);
 
     return new Promise((resolve, reject) => {
-      // Hermes can run as a coding agent
-      const args = ["run", "--prompt", fullPrompt, "--no-confirm"];
-      if (this.model) args.push("--model", this.model);
+      // Hermes CLI: chat -q for single query, -Q for quiet (no banner/spinner), --yolo skips approvals
+      // Do NOT pass --model — Hermes uses its own config
+      const args = ["chat", "-q", fullPrompt, "-Q", "--yolo"];
 
       const proc = spawn("hermes", args, {
         cwd: this.workDir,

@@ -6,6 +6,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { URL, fileURLToPath } from "node:url";
 import zlib from "node:zlib";
 import { WebSocketServer } from "ws";
@@ -14,6 +15,7 @@ import pty from "node-pty";
 import { saveSessions, loadSessions, saveUsers, loadUsers } from "./persist.mjs";
 import { detectProvider, createMergeRequest, getWebUrl } from "./git-provider.mjs";
 import { getAdapter, detectAll as detectAllAgents, findBest as findBestAgent } from "./agent/registry.mjs";
+import { AgentAdapter } from "./agent/adapter.mjs";
 import { fullDetect } from "./onboard.mjs";
 
 // ─── Config ──────────────────────────────────────────────
@@ -55,25 +57,116 @@ function broadcastAll(msg) {
   }
 }
 
+// ─── WorkDir Security ──────────────────────────────────
+const FORBIDDEN_PATHS = ["/", "/etc", "/usr", "/home", "/root", "/var", "/tmp", "/sys", "/proc", "/boot", "/dev"];
+const SERVER_DIR = path.resolve(process.cwd());
+
+function expandHome(p) {
+  if (p && p.startsWith("~")) {
+    return path.join(os.homedir(), p.slice(1));
+  }
+  return p;
+}
+
+function validateWorkDir(workDir) {
+  if (!workDir || typeof workDir !== "string") return { ok: false, error: "workDir must be a non-empty string" };
+  const expanded = expandHome(workDir);
+  const resolved = path.resolve(expanded);
+  // Must be absolute after expansion
+  if (!path.isAbsolute(resolved)) return { ok: false, error: "workDir must be an absolute path" };
+  // Must not be a forbidden path
+  for (const forbidden of FORBIDDEN_PATHS) {
+    if (resolved === forbidden) return { ok: false, error: `workDir cannot be ${forbidden}` };
+  }
+  // Must not be a parent of the server's own directory
+  if (SERVER_DIR.startsWith(resolved) && resolved !== SERVER_DIR) {
+    return { ok: false, error: "workDir cannot be a parent of the server directory" };
+  }
+  return { ok: true, resolved };
+}
+
+function isGitRepo(dir) {
+  return fs.existsSync(path.join(dir, ".git"));
+}
+
+function validateGitUrl(url) {
+  if (!url || typeof url !== "string") return { ok: false, error: "url is required" };
+  // Block file:// protocol and local paths
+  if (url.startsWith("file://")) return { ok: false, error: "file:// URLs are not allowed" };
+  // Block paths that look like local filesystem paths
+  if (/^\//.test(url) || /^[A-Za-z]:/.test(url)) return { ok: false, error: "Local filesystem paths are not allowed" };
+  // Must look like a git URL: https://, http://, git://, ssh://, or user@host:path
+  const validPatterns = [
+    /^https:\/\//i,
+    /^http:\/\//i,
+    /^git:\/\//i,
+    /^ssh:\/\//i,
+    /^[\w.-]+@[\w.-]+:.+/i, // user@host:path (SCP-style)
+  ];
+  const isValid = validPatterns.some(p => p.test(url));
+  if (!isValid) return { ok: false, error: "Invalid git URL format" };
+  return { ok: true };
+}
+
+function getGitTokenEnv(provider, token, url) {
+  const env = {};
+  switch (provider) {
+    case "github":
+      // Use token in URL for HTTPS clone or via GIT_ASKPASS
+      env.GIT_ASKPASS = "echo";
+      env.GIT_TERMINAL_PROMPT = "0";
+      // For GitHub, rewrite URL with token
+      if (url && url.startsWith("https://")) {
+        // Handled by caller via URL rewriting if needed
+        env.GH_TOKEN = token;
+      }
+      break;
+    case "gitlab":
+      env.GIT_TERMINAL_PROMPT = "0";
+      env.GITLAB_TOKEN = token;
+      break;
+    case "bitbucket":
+      env.GIT_TERMINAL_PROMPT = "0";
+      break;
+    default:
+      env.GIT_TERMINAL_PROMPT = "0";
+  }
+  return env;
+}
+
 // ─── Session Management ──────────────────────────────────
-function createSession(name, userId) {
+function createSession(name, userId, opts = {}) {
   const id = uid();
   const branch = `made/${id}-${name.replace(/[^a-z0-9]/gi, "-")}`;
-  const workDir = path.join(PROJECT_DIR, ".sessions", id);
-  fs.mkdirSync(workDir, { recursive: true });
+  let workDir;
+  let skipGitInit = false;
 
-  // Initialize git repo in workspace
-  try {
-    execSync("git init", { cwd: workDir, stdio: "ignore" });
-    execSync(`git checkout -b ${branch}`, { cwd: workDir, stdio: "ignore" });
-    // Write a README so there's something to commit
-    fs.writeFileSync(path.join(workDir, "README.md"), `# ${name}\n\nMADE session.\n`);
-    execSync("git add -A", { cwd: workDir, stdio: "ignore" });
-    execSync('git commit -m "init: MADE session" --no-gpg-sign', {
-      cwd: workDir, stdio: "ignore",
-      env: { ...process.env, GIT_AUTHOR_NAME: "MADE", GIT_AUTHOR_EMAIL: "made@sabbk.com", GIT_COMMITTER_NAME: "MADE", GIT_COMMITTER_EMAIL: "made@sabbk.com" },
-    });
-  } catch (e) { /* git may not be available, that's ok */ }
+  if (opts.workDir) {
+    // User specified a workDir — use it directly
+    workDir = opts.workDir;
+    fs.mkdirSync(workDir, { recursive: true });
+    // Skip git init if it's already a git repo or the user explicitly provided it
+    skipGitInit = isGitRepo(workDir);
+  } else {
+    // Default behavior: create under PROJECT_DIR
+    workDir = path.join(PROJECT_DIR, ".sessions", id);
+    fs.mkdirSync(workDir, { recursive: true });
+  }
+
+  // Initialize git repo in workspace (only if not already a repo)
+  if (!skipGitInit) {
+    try {
+      execSync("git init", { cwd: workDir, stdio: "ignore" });
+      execSync(`git checkout -b ${branch}`, { cwd: workDir, stdio: "ignore" });
+      // Write a README so there's something to commit
+      fs.writeFileSync(path.join(workDir, "README.md"), `# ${name}\n\nMADE session.\n`);
+      execSync("git add -A", { cwd: workDir, stdio: "ignore" });
+      execSync('git commit -m "init: MADE session" --no-gpg-sign', {
+        cwd: workDir, stdio: "ignore",
+        env: { ...process.env, GIT_AUTHOR_NAME: "MADE", GIT_AUTHOR_EMAIL: "made@sabbk.com", GIT_COMMITTER_NAME: "MADE", GIT_COMMITTER_EMAIL: "made@sabbk.com" },
+      });
+    } catch (e) { /* git may not be available, that's ok */ }
+  }
 
   const session = {
     id, name, branch, workDir,
@@ -165,14 +258,14 @@ function resolveAdapter(requestedAgent, requestedModel) {
   return getAdapter(AGENT_CMD || "claude");
 }
 
-function spawnAgent(sessionId, prompt, userId, model = "opus", agentId = null) {
+function spawnAgent(sessionId, prompt, userId, agentId = null) {
   const session = sessions.get(sessionId);
   if (!session) return;
 
   // If agent is already running, queue this request
   if (session.agentRunning) {
     if (!session.agentQueue) session.agentQueue = [];
-    session.agentQueue.push({ prompt, userId, model, agentId });
+    session.agentQueue.push({ prompt, userId, agentId });
     const queueMsg = {
       id: uid(), sessionId, userId: "system", userName: "MADE",
       type: "system", content: `Agent busy. Request queued (position: ${session.agentQueue.length})`,
@@ -189,13 +282,13 @@ function spawnAgent(sessionId, prompt, userId, model = "opus", agentId = null) {
   const startMsg = {
     id: uid(), sessionId, userId: "system", userName: "MADE",
     type: "agent_start", content: prompt, timestamp: now(),
-    metadata: { model, agentId, triggeredBy: userId },
+    metadata: { agentId, triggeredBy: userId },
   };
   session.messages.push(startMsg);
   broadcastToSession(sessionId, { type: "message", message: startMsg });
 
   // Get the right adapter for this system
-  const adapter = resolveAdapter(agentId, model);
+  const adapter = resolveAdapter(agentId);
 
   // Stream callback — broadcasts each line to connected clients
   const onStream = ({ type: streamType, content: streamContent }) => {
@@ -210,11 +303,11 @@ function spawnAgent(sessionId, prompt, userId, model = "opus", agentId = null) {
   // Run the agent via adapter
   (async () => {
     try {
-      await adapter.start(session.workDir, { model });
+      await adapter.start(session.workDir);
 
       const result = await adapter.send(
         prompt,
-        { session, model },
+        { session },
         onStream
       );
 
@@ -258,7 +351,7 @@ function spawnAgent(sessionId, prompt, userId, model = "opus", agentId = null) {
       // Process next queued agent request
       if (session.agentQueue && session.agentQueue.length > 0) {
         const next = session.agentQueue.shift();
-        setTimeout(() => spawnAgent(sessionId, next.prompt, next.userId, next.model, next.agentId), 1000);
+        setTimeout(() => spawnAgent(sessionId, next.prompt, next.userId, next.agentId), 1000);
       }
     }
   })();
@@ -418,7 +511,51 @@ async function handleAPI(req, res, urlPath, method) {
   if (urlPath === "/api/sessions" && method === "POST") {
     const body = await parseBody(req);
     const name = body.name || "New Session";
-    const s = createSession(name, body.userId || "anon");
+    const userId = body.userId || "anon";
+
+    // Handle cloneUrl: clone first, then use as workDir
+    if (body.cloneUrl) {
+      try {
+        const gitUrlValidation = validateGitUrl(body.cloneUrl);
+        if (!gitUrlValidation.ok) return send(json({ error: gitUrlValidation.error }, 400));
+
+        const reposDir = path.join(PROJECT_DIR, ".repos");
+        fs.mkdirSync(reposDir, { recursive: true });
+        const cloneId = uid();
+        const cloneDir = path.join(reposDir, cloneId);
+
+        const cloneArgs = ["clone"];
+        if (body.branch) cloneArgs.push("--branch", body.branch);
+        cloneArgs.push(body.cloneUrl, cloneDir);
+
+        // Build env with token if provided
+        const cloneEnv = { ...process.env };
+        if (body.token && body.provider) {
+          const tokenEnv = getGitTokenEnv(body.provider, body.token, body.cloneUrl);
+          Object.assign(cloneEnv, tokenEnv);
+        }
+
+        execSync(`git ${cloneArgs.map(a => `"${a}"`).join(" ")}`, { cwd: reposDir, stdio: "pipe", env: cloneEnv, timeout: 120000 });
+
+        const s = createSession(name, userId, { workDir: cloneDir });
+        broadcastAll({ type: "session_created", session: sessionToJSON(s) });
+        return send(json(sessionToJSON(s)));
+      } catch (e) {
+        return send(json({ error: `Git clone failed: ${e.message}` }, 500));
+      }
+    }
+
+    // Handle explicit workDir
+    if (body.workDir) {
+      const validation = validateWorkDir(body.workDir);
+      if (!validation.ok) return send(json({ error: validation.error }, 400));
+      const s = createSession(name, userId, { workDir: validation.resolved });
+      broadcastAll({ type: "session_created", session: sessionToJSON(s) });
+      return send(json(sessionToJSON(s)));
+    }
+
+    // Default behavior
+    const s = createSession(name, userId);
     broadcastAll({ type: "session_created", session: sessionToJSON(s) });
     return send(json(sessionToJSON(s)));
   }
@@ -443,7 +580,7 @@ async function handleAPI(req, res, urlPath, method) {
   if (agentMatch && method === "POST") {
     const body = await parseBody(req);
     if (!body.prompt) return send(json({ error: "prompt required" }, 400));
-    spawnAgent(agentMatch[1], body.prompt, body.userId || "anon", body.model || "opus", body.agentId || null);
+    spawnAgent(agentMatch[1], body.prompt, body.userId || "anon", body.agentId || null);
     return send(json({ ok: true, message: "Agent started" }));
   }
 
@@ -466,6 +603,78 @@ async function handleAPI(req, res, urlPath, method) {
     const s = sessions.get(messagesMatch[1]);
     if (!s) return send(json({ error: "Not found" }, 404));
     return send(json({ messages: s.messages.slice(-200) }));
+  }
+
+  // ─── Git Clone ──────────────────────────────────────────
+  if (urlPath === "/api/git/clone" && method === "POST") {
+    const body = await parseBody(req);
+    if (!body.url) return send(json({ error: "url is required" }, 400));
+
+    const validation = validateGitUrl(body.url);
+    if (!validation.ok) return send(json({ error: validation.error }, 400));
+
+    try {
+      const reposDir = path.join(PROJECT_DIR, ".repos");
+      fs.mkdirSync(reposDir, { recursive: true });
+      const cloneId = uid();
+      const cloneDir = path.join(reposDir, cloneId);
+
+      const cloneArgs = ["clone"];
+      if (body.branch) cloneArgs.push("--branch", body.branch);
+      cloneArgs.push(body.url, cloneDir);
+
+      // Build env with token if provided
+      const cloneEnv = { ...process.env };
+      if (body.token && body.provider) {
+        const tokenEnv = getGitTokenEnv(body.provider, body.token, body.url);
+        Object.assign(cloneEnv, tokenEnv);
+        // For HTTPS URLs, inject token into URL for authentication
+        if (body.url.startsWith("https://") && body.token) {
+          const tokenUrl = body.url.replace("https://", `https://x-access-token:${body.token}@`);
+          cloneArgs[cloneArgs.indexOf(body.url)] = tokenUrl;
+        }
+      }
+
+      cloneEnv.GIT_TERMINAL_PROMPT = "0";
+
+      execSync(`git ${cloneArgs.map(a => `"${a}"`).join(" ")}`, {
+        cwd: reposDir, stdio: "pipe", env: cloneEnv, timeout: 120000,
+      });
+
+      // Extract branch and remote info
+      let branch = "main";
+      let remote = body.url;
+      try {
+        branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd: cloneDir, encoding: "utf-8" }).trim();
+        remote = execSync("git remote get-url origin", { cwd: cloneDir, encoding: "utf-8" }).trim();
+      } catch (e) { /* non-critical */ }
+
+      return send(json({ ok: true, workDir: cloneDir, branch, remote }));
+    } catch (e) {
+      return send(json({ error: `Git clone failed: ${e.message}` }, 500));
+    }
+  }
+
+  // ─── Git Providers ─────────────────────────────────────
+  if (urlPath === "/api/git/providers" && method === "GET") {
+    const providers = [
+      {
+        id: "github", name: "GitHub", authType: "token",
+        cliInstalled: !!AgentAdapter.which("gh"),
+        urlPattern: "github.com",
+      },
+      {
+        id: "gitlab", name: "GitLab", authType: "token",
+        cliInstalled: !!AgentAdapter.which("glab"),
+        urlPattern: "gitlab.com",
+      },
+      {
+        id: "bitbucket", name: "Bitbucket", authType: "token",
+        cliInstalled: !!AgentAdapter.which("bb"),
+        urlPattern: "bitbucket.org",
+      },
+    ];
+    return send(json({ providers }));
   }
 
   if (urlPath === "/api/users" && method === "POST") {
@@ -741,7 +950,7 @@ async function handleAPI(req, res, urlPath, method) {
     const body = await parseBody(req);
     // Use agent to generate a plan
     const planPrompt = `Based on the following conversation, create a detailed implementation plan.\n\nConversation context:\n${buildConversationPrompt(s, body.prompt || "Create a plan for the current task")}\n\nOutput a clear, structured plan with numbered steps.`;
-    spawnAgent(genPlanMatch[1], planPrompt, body.userId || "anon", body.model || "opus", body.agentId || null);
+    spawnAgent(genPlanMatch[1], planPrompt, body.userId || "anon", body.agentId || null);
     return send(json({ ok: true, message: "Generating plan..." }));
   }
 
@@ -1076,15 +1285,14 @@ wss.on("connection", (ws) => {
           if (/^do (this|it|the plan)$/i.test(agentPrompt) && session.plan) {
             agentPrompt = `Execute the following plan:\n\n${session.plan.content}\n\n${agentPrompt}`;
           }
-          const model = data.model || "opus";
           setTimeout(() => {
-            spawnAgent(data.sessionId, agentPrompt, data.userId, model, data.agentId || null);
+            spawnAgent(data.sessionId, agentPrompt, data.userId, data.agentId || null);
           }, 500);
         }
       }
 
       if (data.type === "agent_prompt") {
-        spawnAgent(data.sessionId, data.prompt, data.userId, data.model || "opus", data.agentId || null);
+        spawnAgent(data.sessionId, data.prompt, data.userId, data.agentId || null);
       }
 
       // Plan editing awareness

@@ -19,9 +19,9 @@ export class CodexAdapter extends AgentAdapter {
     return { available: true, version };
   }
 
-  async start(workDir, opts = {}) {
+  async start(workDir, _opts = {}) {
     this.workDir = workDir;
-    this.model = opts.model;
+    // MADE does not pass model — Codex uses its own config
   }
 
   async send(prompt, context, onStream) {
