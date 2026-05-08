@@ -7,6 +7,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { URL, fileURLToPath } from "node:url";
+import zlib from "node:zlib";
 import { WebSocketServer } from "ws";
 import { execSync, spawn } from "node:child_process";
 import pty from "node-pty";
@@ -628,7 +629,7 @@ async function handleAPI(req, res, urlPath, method) {
       const mrBody = (body.body || "Created by MADE") + `\n\n---\n🔗 [MADE Session](${sessionUrl})`;
 
       // Use provider abstraction to create the merge request
-      const result = createMergeRequest(s.workDir, title, mrBody, s.branch);
+      const result = await createMergeRequest(s.workDir, title, mrBody, s.branch);
 
       if (result.ok) {
         return send(json({
@@ -804,6 +805,24 @@ async function handleAPI(req, res, urlPath, method) {
           return send(json({ error: `File type .${ext} not allowed. Supported: png, jpg, gif, webp` }, 400));
         }
 
+        // Magic byte verification: ensure actual content matches claimed extension
+        const MAGIC_BYTES = {
+          png:  { offset: 0, bytes: [0x89, 0x50, 0x4E, 0x47] },           // \x89PNG
+          jpg:  { offset: 0, bytes: [0xFF, 0xD8, 0xFF] },                 // JPEG SOI + marker
+          jpeg: { offset: 0, bytes: [0xFF, 0xD8, 0xFF] },
+          gif:  { offset: 0, bytes: [0x47, 0x49, 0x46, 0x38] },           // GIF8
+          webp: { offset: 0, bytes: [0x52, 0x49, 0x46, 0x46],             // RIFF...WEBP
+                  offset2: 8, bytes2: [0x57, 0x45, 0x42, 0x50] },
+        };
+        if (MAGIC_BYTES[ext] && fileData.length >= 12) {
+          const sig = MAGIC_BYTES[ext];
+          const match = sig.bytes.every((b, i) => fileData[sig.offset + i] === b);
+          const match2 = sig.bytes2 ? sig.bytes2.every((b, i) => fileData[sig.offset2 + i] === b) : true;
+          if (!match || !match2) {
+            return send(json({ error: `File content does not match .${ext} format (magic byte mismatch)` }, 400));
+          }
+        }
+
         // Generate unique filename
         const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
         const uploadDir = path.join(s.workDir, ".uploads");
@@ -953,6 +972,9 @@ async function handleAPI(req, res, urlPath, method) {
 }
 
 // ─── Static Files ────────────────────────────────────────
+const CACHEABLE_ASSETS = new Set([".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".eot"]);
+const GZIP_TYPES = new Set([".html", ".css", ".js", ".json", ".svg", ".md", ".txt", ".xml"]);
+
 function serveStatic(req, res, urlPath) {
   const staticDir = path.join(process.cwd(), "static");
   let filePath;
@@ -967,9 +989,26 @@ function serveStatic(req, res, urlPath) {
   if (!fs.existsSync(filePath)) return false;
 
   const ext = path.extname(filePath);
-  const types = { ".html": "text/html", ".css": "text/css", ".js": "application/javascript", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon" };
-  res.writeHead(200, { "Content-Type": types[ext] || "application/octet-stream" });
-  fs.createReadStream(filePath).pipe(res);
+  const types = { ".html": "text/html", ".css": "text/css", ".js": "application/javascript", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff": "font/woff", ".woff2": "font/woff2" };
+  const headers = { "Content-Type": types[ext] || "application/octet-stream" };
+
+  // Cache-Control for static assets
+  if (CACHEABLE_ASSETS.has(ext)) {
+    headers["Cache-Control"] = "public, max-age=86400"; // 1 day
+  } else if (ext === ".html") {
+    headers["Cache-Control"] = "no-cache"; // always revalidate HTML
+  }
+
+  // Gzip compression for text-based files when client accepts it
+  const acceptEncoding = req.headers["accept-encoding"] || "";
+  if (GZIP_TYPES.has(ext) && acceptEncoding.includes("gzip")) {
+    headers["Content-Encoding"] = "gzip";
+    res.writeHead(200, headers);
+    fs.createReadStream(filePath).pipe(zlib.createGzip()).pipe(res);
+  } else {
+    res.writeHead(200, headers);
+    fs.createReadStream(filePath).pipe(res);
+  }
   return true;
 }
 
