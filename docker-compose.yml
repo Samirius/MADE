@@ -1,0 +1,12 @@
+services:
+  made:
+    build: .
+    ports:
+      - "${MADE_PORT:-3000}:3000"
+    volumes:
+      - ./sessions-data:/app/.sessions
+    environment:
+      - MADE_TOKEN=${MADE_TOKEN:-}
+      - MADE_AGENT_CMD=${MADE_AGENT_CMD:-claude}
+      - MADE_PROJECT_DIR=/app
+    restart: unless-stopped

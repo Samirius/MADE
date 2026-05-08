@@ -1,0 +1,1642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MADE — Multiplayer Agent Development Environment</title>
+<script crossorigin src="https://esm.sh/react@18.3.1"></script>
+<script crossorigin src="https://esm.sh/react-dom@18.3.1/client"></script>
+<script crossorigin src="https://esm.sh/htm@3.1.1"></script>
+<style>
+/* ============================================================
+   MADE – Global Styles
+   ============================================================ */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #0a0a0f;
+  --surface: #111118;
+  --surface2: #16161f;
+  --border: #1e1e2e;
+  --text: #e0e0e6;
+  --muted: #888;
+  --dimmed: #555;
+  --accent: #818cf8;
+  --accent-dim: #818cf822;
+  --success: #4ade80;
+  --success-dim: #4ade8022;
+  --warning: #fbbf24;
+  --warning-dim: #fbbf2422;
+  --error: #ef4444;
+  --error-dim: #ef444422;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+}
+html, body, #root { height: 100%; width: 100%; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.5; overflow: hidden; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { font-family: var(--font); cursor: pointer; border: none; outline: none; background: none; color: var(--text); }
+input, textarea { font-family: var(--font); outline: none; border: none; background: none; color: var(--text); }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #444; }
+
+/* ============================================================
+   Layout
+   ============================================================ */
+.app { display: flex; flex-direction: column; height: 100vh; width: 100vw; overflow: hidden; }
+
+/* Header */
+.header {
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 20px; height: 52px; min-height: 52px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  z-index: 10;
+}
+.header-logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.15rem; letter-spacing: -0.5px; }
+.header-logo svg { flex-shrink: 0; }
+.header-logo span { background: linear-gradient(135deg, var(--accent), #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.header-spacer { flex: 1; }
+.header-status { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--muted); }
+.header-status .dot { width: 8px; height: 8px; border-radius: 50%; }
+.header-status .dot.connected { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.header-status .dot.disconnected { background: var(--error); box-shadow: 0 0 6px var(--error); }
+.header-status .dot.connecting { background: var(--warning); box-shadow: 0 0 6px var(--warning); animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.header-user { display: flex; align-items: center; gap: 8px; padding: 4px 12px; background: var(--surface2); border-radius: 20px; font-size: 0.82rem; }
+.header-user .avatar { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 700; color: #fff; }
+
+/* Main layout */
+.main { display: flex; flex: 1; overflow: hidden; }
+
+/* Left sidebar */
+.sidebar {
+  width: 260px; min-width: 260px;
+  background: var(--surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.sidebar-header h3 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+.sidebar-header button { color: var(--accent); font-size: 1.2rem; line-height: 1; padding: 2px 6px; border-radius: var(--radius); transition: background 0.15s; }
+.sidebar-header button:hover { background: var(--accent-dim); }
+.session-list { flex: 1; overflow-y: auto; padding: 8px; }
+.session-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: var(--radius); cursor: pointer;
+  transition: background 0.15s; margin-bottom: 2px;
+}
+.session-item:hover { background: var(--surface2); }
+.session-item.active { background: var(--accent-dim); border: 1px solid var(--accent); }
+.session-item .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.session-item .status-dot.active { background: var(--success); }
+.session-item .status-dot.idle { background: var(--warning); }
+.session-item .status-dot.closed { background: var(--dimmed); }
+.session-item .session-info { flex: 1; min-width: 0; }
+.session-item .session-name { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-item .session-meta { font-size: 0.72rem; color: var(--muted); display: flex; gap: 8px; }
+
+/* Center panel */
+.center-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+/* Tab bar */
+.tab-bar { display: flex; gap: 0; background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 16px; }
+.tab {
+  padding: 10px 18px; font-size: 0.82rem; font-weight: 600; color: var(--muted);
+  border-bottom: 2px solid transparent; transition: all 0.15s; cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Content area */
+.content-area { flex: 1; overflow: hidden; position: relative; }
+.content-scroll { flex: 1; overflow-y: auto; padding: 16px 20px; }
+
+/* Right panel */
+.right-panel {
+  width: 360px; min-width: 360px;
+  background: var(--surface); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.right-panel.collapsed { width: 0; min-width: 0; border: none; overflow: hidden; }
+.right-toggle {
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  width: 20px; height: 48px; background: var(--surface); border: 1px solid var(--border);
+  border-right: none; border-radius: 6px 0 0 6px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; z-index: 5;
+  color: var(--muted); font-size: 0.7rem; transition: background 0.15s;
+}
+.right-toggle:hover { background: var(--surface2); color: var(--text); }
+
+/* Input bar */
+.input-bar {
+  display: flex; align-items: flex-end; gap: 8px;
+  padding: 12px 20px; background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.input-wrapper {
+  flex: 1; display: flex; align-items: flex-end; gap: 8px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 8px 12px;
+  transition: border-color 0.15s;
+}
+.input-wrapper:focus-within { border-color: var(--accent); }
+.input-wrapper textarea {
+  flex: 1; resize: none; min-height: 22px; max-height: 120px;
+  font-size: 0.88rem; line-height: 1.5; padding: 0;
+}
+.input-btn { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius); transition: background 0.15s; color: var(--muted); flex-shrink: 0; }
+.input-btn:hover { background: var(--surface2); color: var(--text); }
+.input-btn.send-btn:hover { background: var(--accent-dim); color: var(--accent); }
+.agent-toggle { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 20px; font-size: 0.78rem; font-weight: 600; border: 1px solid var(--border); transition: all 0.15s; }
+.agent-toggle.off { color: var(--muted); }
+.agent-toggle.on { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
+
+/* ============================================================
+   Chat messages
+   ============================================================ */
+.message-list { display: flex; flex-direction: column; gap: 4px; }
+.msg { display: flex; gap: 10px; padding: 8px 4px; border-radius: var(--radius); }
+.msg:hover { background: var(--surface2); }
+.msg .msg-avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; flex-shrink: 0; }
+.msg .msg-avatar.user { background: #334155; color: #cbd5e1; }
+.msg .msg-avatar.agent { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent); }
+.msg .msg-avatar.system { background: transparent; }
+.msg-body { flex: 1; min-width: 0; }
+.msg-header { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.msg-username { font-size: 0.82rem; font-weight: 700; }
+.msg-time { font-size: 0.7rem; color: var(--dimmed); }
+.msg-content { font-size: 0.88rem; line-height: 1.6; word-break: break-word; white-space: pre-wrap; }
+.msg-content.system { color: var(--dimmed); font-style: italic; }
+.msg-content.diff { font-family: var(--mono); font-size: 0.8rem; }
+.msg-content.diff .diff-add { color: var(--success); }
+.msg-content.diff .diff-del { color: var(--error); }
+.msg-content.plan { border-left: 3px solid var(--accent); padding-left: 12px; background: var(--accent-dim); border-radius: 0 var(--radius) var(--radius) 0; padding: 8px 12px; }
+.msg-image { max-width: 400px; border-radius: var(--radius); margin-top: 4px; cursor: pointer; }
+.msg-agent { background: var(--accent-dim); }
+
+/* ============================================================
+   Terminal
+   ============================================================ */
+.terminal-container { flex: 1; background: #000; color: #4ade80; font-family: var(--mono); font-size: 0.84rem; padding: 12px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; line-height: 1.5; position: relative; }
+.terminal-input-line { display: flex; align-items: center; }
+.terminal-cursor { display: inline-block; width: 8px; height: 16px; background: #4ade80; animation: blink 1s step-end infinite; margin-left: 2px; }
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+.terminal-input-hidden { position: absolute; left: -9999px; opacity: 0; }
+
+/* ============================================================
+   Plan view
+   ============================================================ */
+.plan-container { padding: 16px; }
+.plan-step {
+  display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px;
+  background: var(--surface2); border-radius: var(--radius); margin-bottom: 8px;
+  border: 1px solid var(--border); transition: border-color 0.15s;
+}
+.plan-step:hover { border-color: #333; }
+.plan-step .step-badge {
+  padding: 3px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; flex-shrink: 0;
+}
+.plan-step .step-badge.pending { background: #333; color: #999; }
+.plan-step .step-badge.in_progress { background: var(--warning-dim); color: var(--warning); }
+.plan-step .step-badge.done { background: var(--success-dim); color: var(--success); }
+.plan-step .step-badge.failed { background: var(--error-dim); color: var(--error); }
+.plan-step .step-desc { flex: 1; font-size: 0.88rem; }
+.plan-step .step-output { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); margin-top: 6px; }
+.plan-step .step-actions { flex-shrink: 0; }
+.plan-step .step-actions button {
+  padding: 4px 12px; border-radius: var(--radius); font-size: 0.75rem; font-weight: 600;
+  background: var(--accent-dim); color: var(--accent); transition: all 0.15s;
+}
+.plan-step .step-actions button:hover { background: var(--accent); color: #fff; }
+.add-step-btn {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; padding: 12px; border: 2px dashed var(--border); border-radius: var(--radius);
+  color: var(--muted); font-size: 0.85rem; font-weight: 600; transition: all 0.15s;
+}
+.add-step-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+/* ============================================================
+   Files tree
+   ============================================================ */
+.file-tree { padding: 8px; }
+.file-node {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; border-radius: 4px; cursor: pointer;
+  font-size: 0.82rem; transition: background 0.1s; user-select: none;
+}
+.file-node:hover { background: var(--surface2); }
+.file-node .file-icon { width: 16px; text-align: center; flex-shrink: 0; font-size: 0.85rem; }
+.file-node .file-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-node .file-meta { font-size: 0.7rem; color: var(--dimmed); white-space: nowrap; }
+.file-children { padding-left: 16px; }
+
+/* ============================================================
+   Git
+   ============================================================ */
+.git-panel { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.git-section h4 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 8px; }
+.git-branch-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; background: var(--accent-dim); color: var(--accent);
+  border-radius: 16px; font-size: 0.82rem; font-weight: 600;
+}
+.git-stats { display: flex; gap: 12px; font-size: 0.8rem; }
+.git-stats .stat { display: flex; align-items: center; gap: 4px; }
+.git-stats .stat.modified { color: var(--warning); }
+.git-stats .stat.untracked { color: var(--muted); }
+.git-commit-box { display: flex; gap: 8px; }
+.git-commit-box input {
+  flex: 1; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); font-size: 0.82rem;
+}
+.git-commit-box input:focus { border-color: var(--accent); }
+.git-commit-box button {
+  padding: 8px 16px; background: var(--accent); color: #fff; border-radius: var(--radius);
+  font-size: 0.82rem; font-weight: 700; transition: opacity 0.15s;
+}
+.git-commit-box button:hover { opacity: 0.85; }
+.diff-view { font-family: var(--mono); font-size: 0.78rem; line-height: 1.6; white-space: pre-wrap; background: var(--bg); padding: 12px; border-radius: var(--radius); overflow-x: auto; max-height: 400px; overflow-y: auto; }
+.diff-line-add { color: var(--success); }
+.diff-line-del { color: var(--error); }
+.diff-line-context { color: var(--muted); }
+.diff-line-header { color: var(--accent); font-weight: 700; }
+
+/* Branch list */
+.branch-list { display: flex; flex-direction: column; gap: 4px; }
+.branch-item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  border-radius: var(--radius); cursor: pointer; font-size: 0.82rem; transition: background 0.1s;
+}
+.branch-item:hover { background: var(--surface2); }
+.branch-item.current { background: var(--accent-dim); color: var(--accent); font-weight: 600; }
+
+/* ============================================================
+   Diff panel
+   ============================================================ */
+.diff-card {
+  background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
+  margin: 8px; overflow: hidden;
+}
+.diff-card-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 0.82rem; }
+.diff-card-body { font-family: var(--mono); font-size: 0.78rem; padding: 10px 14px; white-space: pre-wrap; max-height: 200px; overflow: auto; }
+
+/* ============================================================
+   Preview
+   ============================================================ */
+.preview-frame { flex: 1; border: none; background: #fff; border-radius: 0; }
+
+/* ============================================================
+   Dashboard
+   ============================================================ */
+.dashboard { flex: 1; display: flex; flex-direction: column; padding: 32px 40px; overflow-y: auto; }
+.dashboard-header { margin-bottom: 32px; }
+.dashboard-header h1 { font-size: 1.8rem; font-weight: 800; margin-bottom: 4px; }
+.dashboard-header p { color: var(--muted); font-size: 0.95rem; }
+.dashboard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-bottom: 32px; }
+.session-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 20px; cursor: pointer; transition: all 0.15s;
+}
+.session-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+.session-card .card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.session-card .card-name { font-size: 1rem; font-weight: 700; }
+.session-card .card-branch { font-family: var(--mono); font-size: 0.75rem; color: var(--accent); background: var(--accent-dim); padding: 2px 8px; border-radius: 10px; }
+.session-card .card-stats { display: flex; gap: 16px; font-size: 0.8rem; color: var(--muted); margin-bottom: 8px; }
+.session-card .card-time { font-size: 0.75rem; color: var(--dimmed); }
+.new-session-card {
+  background: var(--surface); border: 2px dashed var(--border); border-radius: var(--radius-lg);
+  padding: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  gap: 8px; color: var(--muted); font-size: 0.95rem; font-weight: 600; transition: all 0.15s;
+}
+.new-session-card:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+/* Activity feed */
+.activity-section h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 12px; }
+.activity-feed { display: flex; flex-direction: column; gap: 6px; }
+.activity-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; background: var(--surface); border-radius: var(--radius);
+  font-size: 0.82rem;
+}
+.activity-item .act-icon { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; flex-shrink: 0; }
+.activity-item .act-icon.commit { background: var(--success-dim); color: var(--success); }
+.activity-item .act-icon.join { background: var(--accent-dim); color: var(--accent); }
+.activity-item .act-icon.message { background: #333; color: #aaa; }
+.activity-item .act-text { flex: 1; }
+.activity-item .act-time { color: var(--dimmed); font-size: 0.72rem; }
+
+/* ============================================================
+   Empty / Loading states
+   ============================================================ */
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; color: var(--muted); text-align: center; }
+.empty-state .empty-icon { font-size: 3rem; margin-bottom: 16px; opacity: 0.5; }
+.empty-state h3 { font-size: 1rem; margin-bottom: 4px; color: var(--text); }
+.empty-state p { font-size: 0.85rem; }
+.loading-spinner { display: flex; align-items: center; justify-content: center; padding: 40px; }
+.spinner { width: 24px; height: 24px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Modal overlay */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); width: 90%; max-width: 700px; max-height: 80vh; display: flex; flex-direction: column; }
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.modal-header h3 { font-size: 1rem; }
+.modal-header button { color: var(--muted); font-size: 1.2rem; padding: 4px; }
+.modal-header button:hover { color: var(--text); }
+.modal-body { flex: 1; overflow: auto; padding: 20px; }
+.modal-body pre { font-family: var(--mono); font-size: 0.82rem; white-space: pre-wrap; word-break: break-all; }
+
+/* Autocomplete dropdown */
+.autocomplete { position: absolute; bottom: 100%; left: 0; right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 4px; max-height: 180px; overflow-y: auto; z-index: 50; box-shadow: 0 -4px 12px rgba(0,0,0,0.4); }
+.autocomplete-item { padding: 8px 14px; font-size: 0.82rem; cursor: pointer; transition: background 0.1s; }
+.autocomplete-item:hover, .autocomplete-item.selected { background: var(--accent-dim); color: var(--accent); }
+
+/* New session modal */
+.new-session-modal-input { width: 100%; padding: 10px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.9rem; }
+.new-session-modal-input:focus { border-color: var(--accent); }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; padding: 16px 20px; border-top: 1px solid var(--border); }
+.btn-primary { padding: 8px 20px; background: var(--accent); color: #fff; border-radius: var(--radius); font-size: 0.85rem; font-weight: 700; transition: opacity 0.15s; }
+.btn-primary:hover { opacity: 0.85; }
+.btn-secondary { padding: 8px 20px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.85rem; font-weight: 600; transition: all 0.15s; }
+.btn-secondary:hover { border-color: #444; }
+
+/* Mention highlight */
+.mention { color: var(--accent); font-weight: 600; background: var(--accent-dim); padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module">
+// ============================================================
+// MADE – Frontend (React 18 + htm)
+// ============================================================
+
+const React = window.React;
+const ReactDOMClient = window.ReactDOMClient;
+const htm = window.htm;
+
+const { useState, useEffect, useRef, useCallback, useMemo, Fragment, createContext, useContext } = React;
+const html = htm.bind(React.createElement);
+
+// ============================================================
+// Constants
+// ============================================================
+const WS_EVENTS = {
+  ChatMessage:   'chat:message',
+  ChatEdit:      'chat:edit',
+  ChatDelete:    'chat:delete',
+  SessionCreate: 'session:create',
+  SessionJoin:   'session:join',
+  SessionLeave:  'session:leave',
+  SessionList:   'session:list',
+  TerminalOutput:'terminal:output',
+  TerminalInput: 'terminal:input',
+  TerminalResize:'terminal:resize',
+  FileRead:      'file:read',
+  FileWrite:     'file:write',
+  FileList:      'file:list',
+  FileChange:    'file:change',
+  GitStatus:     'git:status',
+  GitDiff:       'git:diff',
+  GitCommit:     'git:commit',
+  GitBranch:     'git:branch',
+  AgentStart:    'agent:start',
+  AgentOutput:   'agent:output',
+  AgentStop:     'agent:stop',
+  PlanCreate:    'plan:create',
+  PlanUpdate:    'plan:update',
+  DiffShow:      'diff:show',
+  PreviewUrl:    'preview:url',
+  UserJoin:      'user:join',
+  UserLeave:     'user:leave',
+  Activity:      'activity',
+};
+
+// ============================================================
+// WebSocket Client
+// ============================================================
+class WSClient {
+  constructor() {
+    this.ws = null;
+    this.connected = false;
+    this.status = 'disconnected'; // disconnected | connecting | connected
+    this.handlers = new Map();
+    this.reconnectTimer = null;
+    this.reconnectDelay = 1000;
+    this.userId = null;
+    this.onStatusChange = null;
+  }
+
+  connect() {
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
+    this._setStatus('connecting');
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    this.ws = new WebSocket(`${proto}//${location.host}/ws`);
+
+    this.ws.onopen = () => {
+      this.connected = true;
+      this._setStatus('connected');
+      this.reconnectDelay = 1000;
+    };
+
+    this.ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === WS_EVENTS.UserJoin && msg.payload && msg.payload.userId && !this.userId) {
+          this.userId = msg.payload.userId;
+        }
+        this._emit(msg.type, msg);
+      } catch (e) { /* ignore parse errors */ }
+    };
+
+    this.ws.onclose = () => {
+      this.connected = false;
+      this._setStatus('disconnected');
+      this._scheduleReconnect();
+    };
+
+    this.ws.onerror = () => {
+      this.connected = false;
+      this._setStatus('disconnected');
+    };
+  }
+
+  send(type, payload, sessionId) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    const msg = { type, payload, userId: this.userId };
+    if (sessionId) msg.sessionId = sessionId;
+    this.ws.send(JSON.stringify(msg));
+  }
+
+  on(type, handler) {
+    if (!this.handlers.has(type)) this.handlers.set(type, new Set());
+    this.handlers.get(type).add(handler);
+    return () => { const s = this.handlers.get(type); if (s) s.delete(handler); };
+  }
+
+  _emit(type, msg) {
+    const s = this.handlers.get(type);
+    if (s) s.forEach(h => { try { h(msg); } catch(e) { console.error(e); } });
+    const all = this.handlers.get('*');
+    if (all) all.forEach(h => { try { h(msg); } catch(e) { console.error(e); } });
+  }
+
+  _setStatus(status) {
+    this.status = status;
+    if (this.onStatusChange) this.onStatusChange(status);
+  }
+
+  _scheduleReconnect() {
+    if (this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+      this.reconnectDelay = Math.min(this.reconnectDelay * 2, 10000);
+    }, this.reconnectDelay);
+  }
+}
+
+const ws = new WSClient();
+
+// ============================================================
+// App context
+// ============================================================
+const AppContext = createContext(null);
+
+// ============================================================
+// Utility functions
+// ============================================================
+function formatTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const now = new Date();
+  const diff = now - d;
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+  return d.toLocaleDateString();
+}
+
+function formatTimeShort(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function getInitials(name) {
+  return (name || '?').split(/[\s-_]+/).map(w => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function parseDiffContent(content) {
+  const lines = (content || '').split('\n');
+  return lines.map(line => {
+    if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('@@')) {
+      return { type: 'header', text: line };
+    }
+    if (line.startsWith('+')) return { type: 'add', text: line };
+    if (line.startsWith('-')) return { type: 'del', text: line };
+    return { type: 'context', text: line };
+  });
+}
+
+function parseMentions(text, users) {
+  if (!text) return text;
+  return text.replace(/@(\w+)/g, (match, name) => {
+    const found = (users || []).find(u => u.name && u.name.toLowerCase().startsWith(name.toLowerCase()));
+    return found ? `<span class="mention">${match}</span>` : match;
+  });
+}
+
+// ============================================================
+// SVG Icons
+// ============================================================
+const Icons = {
+  Logo: () => html`<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <rect x="2" y="2" width="20" height="20" rx="4" fill="#818cf8" opacity="0.15"/>
+    <path d="M7 8L12 4L17 8V16L12 20L7 16V8Z" stroke="#818cf8" stroke-width="2" fill="none"/>
+    <circle cx="12" cy="12" r="3" fill="#818cf8"/>
+  </svg>`,
+  Send: () => html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>`,
+  Camera: () => html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>`,
+  Plus: () => html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
+  Close: () => html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
+  Folder: () => html`<span style=${{ color: '#fbbf24' }}>📂</span>`,
+  File: () => html`<span style=${{ color: '#888' }}>📄</span>`,
+  Git: () => html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><line x1="6" y1="9" x2="6" y2="12"/><line x1="18" y1="9" x2="18" y2="12"/><path d="M6 12C6 15 12 15 12 15"/><path d="M18 12C18 15 12 15 12 15"/></svg>`,
+  Branch: () => html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 01-9 9"/></svg>`,
+  ChevronRight: () => html`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>`,
+  ChevronLeft: () => html`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>`,
+  Bot: () => html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><line x1="12" y1="7" x2="12" y2="11"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>`,
+  Terminal: () => html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>`,
+  Play: () => html`<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`,
+  Eye: () => html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
+  Diff: () => html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/><line x1="4" y1="19" x2="20" y2="19"/></svg>`,
+};
+
+// ============================================================
+// Custom hooks
+// ============================================================
+function useWS(eventType, handler) {
+  useEffect(() => {
+    const unsub = ws.on(eventType, handler);
+    return unsub;
+  }, [eventType, handler]);
+}
+
+// ============================================================
+// Components: Header
+// ============================================================
+function Header({ wsStatus, userId, sessions, currentSessionId }) {
+  const currentSession = sessions.find(s => s.id === currentSessionId);
+  return html`
+    <div class="header">
+      <div class="header-logo">
+        <${Icons.Logo} />
+        <span>MADE</span>
+      </div>
+      ${currentSession && html`
+        <div style=${{ fontSize: '0.82rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style=${{ color: 'var(--dimmed)' }}>∕</span>
+          <span style=${{ fontWeight: 600, color: 'var(--text)' }}>${currentSession.name}</span>
+          <span style=${{ fontFamily: 'var(--mono)', fontSize: '0.72rem', color: 'var(--accent)', background: 'var(--accent-dim)', padding: '1px 8px', borderRadius: '10px' }}>${currentSession.branch.replace('session/', '🌿 ')}</span>
+        </div>
+      `}
+      <div class="header-spacer" />
+      <div class="header-status">
+        <div class="dot ${wsStatus}" />
+        <span>${wsStatus === 'connected' ? 'Connected' : wsStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}</span>
+      </div>
+      <div class="header-user">
+        <div class="avatar">${getInitials(userId || 'G')}</div>
+        <span>${userId ? userId.slice(0, 12) : '...'}</span>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// Components: Sidebar (Session List)
+// ============================================================
+function Sidebar({ sessions, currentSessionId, onSelectSession, onCreateSession }) {
+  return html`
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <h3>Sessions</h3>
+        <button onClick=${onCreateSession} title="New Session"><${Icons.Plus} /></button>
+      </div>
+      <div class="session-list">
+        ${sessions.length === 0 && html`
+          <div class="empty-state" style=${{ padding: '40px 16px' }}>
+            <p style=${{ fontSize: '0.8rem' }}>No sessions yet</p>
+            <p style=${{ fontSize: '0.75rem', marginTop: '4px' }}>Click + to create one</p>
+          </div>
+        `}
+        ${sessions.map(s => html`
+          <div
+            key=${s.id}
+            class="session-item ${s.id === currentSessionId ? 'active' : ''}"
+            onClick=${() => onSelectSession(s.id)}
+          >
+            <div class="status-dot ${s.status}" />
+            <div class="session-info">
+              <div class="session-name">${s.name}</div>
+              <div class="session-meta">
+                <span>🌿 ${s.branch.replace('session/', '').slice(0, 8)}</span>
+                <span>${formatTime(s.updatedAt)}</span>
+              </div>
+            </div>
+          </div>
+        `)}
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// Components: Chat Tab
+// ============================================================
+function ChatTab({ messages, users, sessionId, onSend }) {
+  const [input, setInput] = useState('');
+  const [agentMode, setAgentMode] = useState(false);
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [autocompleteItems, setAutocompleteItems] = useState([]);
+  const [acIndex, setAcIndex] = useState(0);
+  const messagesEndRef = useRef(null);
+  const textareaRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const handleInputChange = useCallback((e) => {
+    const val = e.target.value;
+    setInput(val);
+
+    // Check for @ mentions
+    const cursorPos = e.target.selectionStart;
+    const textBeforeCursor = val.slice(0, cursorPos);
+    const mentionMatch = textBeforeCursor.match(/@(\w*)$/);
+    if (mentionMatch && users.length > 0) {
+      const query = mentionMatch[1].toLowerCase();
+      const matches = users.filter(u => u.name && u.name.toLowerCase().includes(query));
+      if (matches.length > 0) {
+        setAutocompleteItems(matches);
+        setShowAutocomplete(true);
+        setAcIndex(0);
+        return;
+      }
+    }
+
+    // Check for / commands
+    const cmdMatch = textBeforeCursor.match(/\/(\w*)$/);
+    if (cmdMatch) {
+      const cmds = [
+        { name: '/plan', desc: 'Create an execution plan' },
+        { name: '/agent', desc: 'Start an agent' },
+        { name: '/commit', desc: 'Commit changes' },
+        { name: '/diff', desc: 'View diff' },
+        { name: '/clear', desc: 'Clear chat' },
+      ];
+      const query = cmdMatch[1].toLowerCase();
+      const matches = cmds.filter(c => c.name.includes('/' + query));
+      if (matches.length > 0) {
+        setAutocompleteItems(matches.map(c => ({ name: c.name, desc: c.desc })));
+        setShowAutocomplete(true);
+        setAcIndex(0);
+        return;
+      }
+    }
+
+    setShowAutocomplete(false);
+  }, [users]);
+
+  const handleKeyDown = useCallback((e) => {
+    if (showAutocomplete && autocompleteItems.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setAcIndex(prev => Math.min(prev + 1, autocompleteItems.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setAcIndex(prev => Math.max(prev - 1, 0));
+        return;
+      }
+      if (e.key === 'Tab' || e.key === 'Enter') {
+        e.preventDefault();
+        const item = autocompleteItems[acIndex];
+        if (item) {
+          const cursorPos = e.target.selectionStart;
+          const textBeforeCursor = input.slice(0, cursorPos);
+          const textAfterCursor = input.slice(cursorPos);
+          const replaced = textBeforeCursor.replace(/@?\w*$/, item.name.startsWith('/') ? item.name + ' ' : '@' + item.name + ' ');
+          setInput(replaced + textAfterCursor);
+          setShowAutocomplete(false);
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        setShowAutocomplete(false);
+        return;
+      }
+    }
+
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  }, [showAutocomplete, autocompleteItems, acIndex, input]);
+
+  const handleSend = useCallback(() => {
+    const text = input.trim();
+    if (!text || !sessionId) return;
+    onSend(text, agentMode ? 'plan' : 'text');
+    setInput('');
+    setShowAutocomplete(false);
+  }, [input, sessionId, agentMode, onSend]);
+
+  const handleImageUpload = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (!file || !sessionId) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    fetch('/api/upload', { method: 'POST', body: formData })
+      .then(r => r.json())
+      .then(data => {
+        if (data.url) {
+          onSend(data.url, 'image');
+        }
+      })
+      .catch(() => {});
+    e.target.value = '';
+  }, [sessionId, onSend]);
+
+  const renderMessageContent = useCallback((msg) => {
+    if (msg.type === 'system') {
+      return html`<div class="msg-content system">${msg.content}</div>`;
+    }
+    if (msg.type === 'image') {
+      return html`
+        <div class="msg-content">
+          ${msg.content && html`<img class="msg-image" src=${msg.content} alt="uploaded image" />`}
+        </div>
+      `;
+    }
+    if (msg.type === 'diff') {
+      const lines = parseDiffContent(msg.content);
+      return html`
+        <div class="msg-content diff">
+          ${lines.map((l, i) => html`
+            <div key=${i} class="diff-line-${l.type}">${l.text}</div>
+          `)}
+        </div>
+      `;
+    }
+    if (msg.type === 'plan') {
+      return html`<div class="msg-content plan">${msg.content}</div>`;
+    }
+    // Regular text with mention parsing
+    return html`<div class="msg-content" dangerouslySetInnerHTML=${{ __html: parseMentions(escapeHtml(msg.content), users) }} />`;
+  }, [users]);
+
+  return html`
+    <div style=${{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div class="content-scroll">
+        <div class="message-list">
+          ${messages.length === 0 && html`
+            <div class="empty-state">
+              <div class="empty-icon">💬</div>
+              <h3>No messages yet</h3>
+              <p>Start the conversation by typing a message below</p>
+            </div>
+          `}
+          ${messages.map(msg => {
+            const user = users.find(u => u.id === msg.userId);
+            const isAgent = user?.isAgent;
+            return html`
+              <div key=${msg.id} class="msg ${isAgent ? 'msg-agent' : ''}">
+                <div class="msg-avatar ${isAgent ? 'agent' : (msg.type === 'system' ? 'system' : 'user')}">
+                  ${msg.type === 'system' ? '⚡' : (isAgent ? '🤖' : getInitials(user?.name || msg.userId))}
+                </div>
+                <div class="msg-body">
+                  <div class="msg-header">
+                    <span class="msg-username" style=${{ color: isAgent ? 'var(--accent)' : 'var(--text)' }}>
+                      ${msg.type === 'system' ? 'System' : (user?.name || msg.userId.slice(0, 8))}
+                    </span>
+                    <span class="msg-time">${formatTimeShort(msg.timestamp)}</span>
+                  </div>
+                  ${renderMessageContent(msg)}
+                </div>
+              </div>
+            `;
+          })}
+          <div ref=${messagesEndRef} />
+        </div>
+      </div>
+      <div class="input-bar" style=${{ position: 'relative' }}>
+        ${showAutocomplete && autocompleteItems.length > 0 && html`
+          <div class="autocomplete">
+            ${autocompleteItems.map((item, i) => html`
+              <div key=${i} class="autocomplete-item ${i === acIndex ? 'selected' : ''}" onClick=${() => {
+                const cursorPos = textareaRef.current?.selectionStart || input.length;
+                const textBeforeCursor = input.slice(0, cursorPos);
+                const textAfterCursor = input.slice(cursorPos);
+                const replaced = textBeforeCursor.replace(/@?\w*$/, (item.name.startsWith('/') ? item.name + ' ' : '@' + item.name + ' '));
+                setInput(replaced + textAfterCursor);
+                setShowAutocomplete(false);
+                textareaRef.current?.focus();
+              }}>
+                <span style=${{ fontWeight: 600 }}>${item.name}</span>
+                ${item.desc && html`<span style=${{ marginLeft: '12px', color: 'var(--muted)', fontSize: '0.75rem' }}>${item.desc}</span>`}
+              </div>
+            `)}
+          </div>
+        `}
+        <input ref=${fileInputRef} type="file" accept="image/*" style=${{ display: 'none' }} onChange=${handleImageUpload} />
+        <div class="input-wrapper">
+          <textarea
+            ref=${textareaRef}
+            rows="1"
+            placeholder="Type a message... (@mention, /command)"
+            value=${input}
+            onInput=${(e) => { setInput(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'; }}
+            onKeyDown=${handleKeyDown}
+            style=${{ width: '100%' }}
+          />
+        </div>
+        <button class="input-btn" onClick=${() => fileInputRef.current?.click()} title="Upload image">
+          <${Icons.Camera} />
+        </button>
+        <button class="agent-toggle ${agentMode ? 'on' : 'off'}" onClick=${() => setAgentMode(!agentMode)} title="Toggle agent mode">
+          <${Icons.Bot} />
+          <span>Agent</span>
+        </button>
+        <button class="input-btn send-btn" onClick=${handleSend} title="Send message">
+          <${Icons.Send} />
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// Components: Terminal Tab
+// ============================================================
+function TerminalTab({ sessionId, terminalOutput }) {
+  const [inputBuf, setInputBuf] = useState('');
+  const termRef = useRef(null);
+  const hiddenInputRef = useRef(null);
+
+  useEffect(() => {
+    if (termRef.current) {
+      termRef.current.scrollTop = termRef.current.scrollHeight;
+    }
+  }, [terminalOutput]);
+
+  const handleTermClick = useCallback(() => {
+    hiddenInputRef.current?.focus();
+  }, []);
+
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'Enter') {
+      const data = inputBuf + '\n';
+      ws.send(WS_EVENTS.TerminalInput, { sessionId, data }, sessionId);
+      setInputBuf('');
+    } else if (e.key === 'Backspace') {
+      setInputBuf(prev => prev.slice(0, -1));
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+    } else if (e.key.length === 1) {
+      const data = e.key;
+      ws.send(WS_EVENTS.TerminalInput, { sessionId, data }, sessionId);
+      setInputBuf(prev => prev + data);
+    } else if (e.ctrlKey) {
+      const data = String.fromCharCode(e.keyCode - 64);
+      ws.send(WS_EVENTS.TerminalInput, { sessionId, data }, sessionId);
+    }
+  }, [sessionId, inputBuf]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (termRef.current) {
+        const cols = Math.floor(termRef.current.clientWidth / 8);
+        const rows = Math.floor(termRef.current.clientHeight / 17);
+        if (cols > 0 && rows > 0) {
+          ws.send(WS_EVENTS.TerminalResize, { sessionId, cols, rows }, sessionId);
+        }
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [sessionId]);
+
+  return html`
+    <div class="terminal-container" ref=${termRef} onClick=${handleTermClick} tabIndex="0">
+      <input
+        ref=${hiddenInputRef}
+        class="terminal-input-hidden"
+        value=${inputBuf}
+        onKeyDown=${handleKeyDown}
+        onChange=${() => {}}
+        autoFocus
+      />
+      <div dangerouslySetInnerHTML=${{ __html: escapeHtml(terminalOutput || '$ ') }} />
+      <span class="terminal-cursor" />
+    </div>
+  `;
+}
+
+// ============================================================
+// Components: Plan Tab
+// ============================================================
+function PlanTab({ sessionId, planSteps }) {
+  const [newStepDesc, setNewStepDesc] = useState('');
+  const [showAddStep, setShowAddStep] = useState(false);
+
+  const handleAddStep = useCallback(() => {
+    if (!newStepDesc.trim() || !sessionId) return;
+    const newStep = {
+      id: 'step-' + Date.now(),
+      description: newStepDesc.trim(),
+      status: 'pending',
+    };
+    const allSteps = [...(planSteps || []), newStep];
+    ws.send(WS_EVENTS.PlanCreate, { sessionId, steps: allSteps }, sessionId);
+    setNewStepDesc('');
+    setShowAddStep(false);
+  }, [newStepDesc, sessionId, planSteps]);
+
+  const handleExecuteStep = useCallback((stepId) => {
+    if (!sessionId) return;
+    ws.send(WS_EVENTS.PlanUpdate, { sessionId, stepId, update: { status: 'in_progress' } }, sessionId);
+  }, [sessionId]);
+
+  return html`
+    <div class="plan-container">
+      ${(!planSteps || planSteps.length === 0) && !showAddStep && html`
+        <div class="empty-state">
+          <div class="empty-icon">📋</div>
+          <h3>No plan steps</h3>
+          <p>Create a plan to organize your work</p>
+          <button class="add-step-btn" style=${{ marginTop: '16px', width: 'auto', padding: '8px 20px' }} onClick=${() => setShowAddStep(true)}>
+            <${Icons.Plus} /> Add First Step
+          </button>
+        </div>
+      `}
+      ${(planSteps || []).map(step => html`
+        <div key=${step.id} class="plan-step">
+          <span class="step-badge ${step.status}">
+            ${step.status === 'pending' ? '○ Pending' : step.status === 'in_progress' ? '◐ Running' : step.status === 'done' ? '● Done' : '✕ Failed'}
+          </span>
+          <div style=${{ flex: 1 }}>
+            <div class="step-desc">${step.description}</div>
+            ${step.output && html`<div class="step-output">${step.output}</div>`}
+          </div>
+          ${step.status === 'pending' && html`
+            <div class="step-actions">
+              <button onClick=${() => handleExecuteStep(step.id)}><${Icons.Play} /> Run</button>
+            </div>
+          `}
+        </div>
+      `)}
+      ${showAddStep && html`
+        <div class="plan-step" style=${{ flexDirection: 'column', gap: '8px' }}>
+          <input
+            class="new-session-modal-input"
+            placeholder="Describe the step..."
+            value=${newStepDesc}
+            onInput=${e => setNewStepDesc(e.target.value)}
+            onKeyDown=${e => e.key === 'Enter' && handleAddStep()}
+            autoFocus
+          />
+          <div style=${{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+            <button class="btn-secondary" onClick=${() => setShowAddStep(false)}>Cancel</button>
+            <button class="btn-primary" onClick=${handleAddStep}>Add Step</button>
+          </div>
+        </div>
+      `}
+      ${!showAddStep && planSteps && planSteps.length > 0 && html`
+        <button class="add-step-btn" onClick=${() => setShowAddStep(true)}>
+          <${Icons.Plus} /> Add Step
+        </button>
+      `}
+    </div>
+  `;
+}
+
+// ============================================================
+// Components: Files Tab
+// ============================================================
+function FilesTab({ sessionId, fileTree }) {
+  const [expandedDirs, setExpandedDirs] = useState(new Set());
+  const [viewingFile, setViewingFile] = useState(null);
+  const [fileContent, setFileContent] = useState('');
+
+  useEffect(() => {
+    if (sessionId) {
+      ws.send(WS_EVENTS.FileList, { sessionId }, sessionId);
+    }
+  }, [sessionId]);
+
+  const toggleDir = useCallback((path) => {
+    setExpandedDirs(prev => {
+      const next = new Set(prev);
+      if (next.has(path)) { next.delete(path); } else { next.add(path); ws.send(WS_EVENTS.FileList, { sessionId, dirPath: path }, sessionId); }
+      return next;
+    });
+  }, [sessionId]);
+
+  const viewFile = useCallback((node) => {
+    if (sessionId) {
+      ws.send(WS_EVENTS.FileRead, { sessionId, filePath: node.path }, sessionId);
+    }
+  }, [sessionId]);
+
+  useWS(WS_EVENTS.FileRead, useCallback((msg) => {
+    if (msg.payload) {
+      setFileContent(msg.payload.content || '');
+      setViewingFile(msg.payload.filePath);
+    }
+  }, []));
+
+  const renderNode = useCallback((node, depth) => {
+    if (!node) return null;
+    const isDir = node.type === 'directory';
+    const isExpanded = expandedDirs.has(node.path);
+    const sizeStr = node.size ? (node.size < 1024 ? node.size + ' B' : (node.size / 1024).toFixed(1) + ' KB') : '';
+    return html`
+      <div key=${node.path}>
+        <div class="file-node" style=${{ paddingLeft: (8 + depth * 16) + 'px' }} onClick=${() => isDir ? toggleDir(node.path) : viewFile(node)}>
+          ${isDir ? html`<span class="file-icon">${isExpanded ? '📂' : '📁'}</span>` : html`<span class="file-icon">📄</span>`}
+          <span class="file-name">${node.name}</span>
+          ${!isDir && sizeStr && html`<span class="file-meta">${sizeStr}</span>`}
+        </div>
+        ${isDir && isExpanded && node.children && node.children.map(child => renderNode(child, depth + 1))}
+      </div>
+    `;
+  }, [expandedDirs, toggleDir, viewFile]);
+
+  return html`
+    <div style=${{ flex: 1, overflow: 'auto' }}>
+      <div class="file-tree">
+        ${fileTree && fileTree.length > 0
+          ? fileTree.map(node => renderNode(node, 0))
+          : html`<div class="empty-state" style=${{ padding: '40px 16px' }}><p style=${{ fontSize: '0.8rem' }}>No files loaded</p></div>`
+        }
+      </div>
+      ${viewingFile && html`
+        <div class="modal-overlay" onClick=${() => setViewingFile(null)}>
+          <div class="modal" onClick=${e => e.stopPropagation()}>
+            <div class="modal-header">
+              <h3>${viewingFile}</h3>
+              <button onClick=${() => setViewingFile(null)}><${Icons.Close} /></button>
+            </div>
+            <div class="modal-body">
+              <pre>${fileContent}</pre>
+            </div>
+          </div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+// ============================================================
+// Components: Git Tab
+// ============================================================
+function GitTab({ sessionId }) {
+  const [gitStatus, setGitStatus] = useState(null);
+  const [gitDiff, setGitDiff] = useState('');
+  const [gitBranches, setGitBranches] = useState(null);
+  const [commitMsg, setCommitMsg] = useState('');
+  const [diffLoading, setDiffLoading] = useState(false);
+
+  useEffect(() => {
+    if (sessionId) {
+      ws.send(WS_EVENTS.GitStatus, { sessionId }, sessionId);
+      ws.send(WS_EVENTS.GitBranch, { sessionId }, sessionId);
+    }
+  }, [sessionId]);
+
+  const refreshStatus = useCallback(() => {
+    if (sessionId) {
+      ws.send(WS_EVENTS.GitStatus, { sessionId }, sessionId);
+      ws.send(WS_EVENTS.GitBranch, { sessionId }, sessionId);
+    }
+  }, [sessionId]);
+
+  useWS(WS_EVENTS.GitStatus, useCallback((msg) => {
+    if (msg.payload) setGitStatus(msg.payload);
+  }, []));
+
+  useWS(WS_EVENTS.GitDiff, useCallback((msg) => {
+    if (msg.payload) {
+      setGitDiff(msg.payload.diff || '');
+      setDiffLoading(false);
+    }
+  }, []));
+
+  useWS(WS_EVENTS.GitBranch, useCallback((msg) => {
+    if (msg.payload) setGitBranches(msg.payload);
+  }, []));
+
+  useWS(WS_EVENTS.Activity, useCallback((msg) => {
+    if (msg.payload?.action === 'commit') {
+      refreshStatus();
+      setCommitMsg('');
+    }
+  }, [refreshStatus]));
+
+  const handleCommit = useCallback(() => {
+    if (!commitMsg.trim() || !sessionId) return;
+    ws.send(WS_EVENTS.GitCommit, { sessionId, message: commitMsg.trim() }, sessionId);
+  }, [commitMsg, sessionId]);
+
+  const handleShowDiff = useCallback(() => {
+    if (!sessionId) return;
+    setDiffLoading(true);
+    ws.send(WS_EVENTS.GitDiff, { sessionId }, sessionId);
+  }, [sessionId]);
+
+  const diffLines = useMemo(() => parseDiffContent(gitDiff), [gitDiff]);
+
+  return html`
+    <div class="git-panel">
+      <div class="git-section">
+        <h4>Branch</h4>
+        ${gitStatus ? html`
+          <div class="git-branch-tag">
+            <${Icons.Branch} />
+            ${gitStatus.branch || 'main'}
+          </div>
+        ` : html`<span style=${{ fontSize: '0.8rem', color: 'var(--muted)' }}>Loading...</span>`}
+      </div>
+
+      ${gitStatus && html`
+        <div class="git-section">
+          <h4>Status</h4>
+          <div class="git-stats">
+            ${gitStatus.modified?.length > 0 && html`<span class="stat modified">● ${gitStatus.modified.length} modified</span>`}
+            ${gitStatus.staged?.length > 0 && html`<span class="stat" style=${{ color: 'var(--success)' }}>● ${gitStatus.staged.length} staged</span>`}
+            ${gitStatus.untracked?.length > 0 && html`<span class="stat untracked">● ${gitStatus.untracked.length} untracked</span>`}
+            ${gitStatus.modified?.length === 0 && gitStatus.untracked?.length === 0 && gitStatus.staged?.length === 0 && html`
+              <span style=${{ fontSize: '0.8rem', color: 'var(--success)' }}>✓ Clean working tree</span>
+            `}
+          </div>
+        </div>
+      `}
+
+      <div class="git-section">
+        <h4>Diff</h4>
+        <button class="btn-secondary" style=${{ marginBottom: '8px', padding: '6px 14px', fontSize: '0.78rem' }} onClick=${handleShowDiff}>
+          Show Diff
+        </button>
+        ${diffLoading && html`<div class="loading-spinner"><div class="spinner" /></div>`}
+        ${gitDiff && !diffLoading && html`
+          <div class="diff-view">
+            ${diffLines.map((l, i) => html`<div key=${i} class="diff-line-${l.type}">${l.text}</div>`)}
+          </div>
+        `}
+      </div>
+
+      <div class="git-section">
+        <h4>Commit</h4>
+        <div class="git-commit-box">
+          <input placeholder="Commit message..." value=${commitMsg} onInput=${e => setCommitMsg(e.target.value)} onKeyDown=${e => e.key === 'Enter' && handleCommit()} />
+          <button onClick=${handleCommit}>Commit</button>
+        </div>
+      </div>
+
+      ${gitBranches && gitBranches.branches?.length > 0 && html`
+        <div class="git-section">
+          <h4>Branches</h4>
+          <div class="branch-list">
+            ${gitBranches.branches.map(b => html`
+              <div key=${b} class="branch-item ${b === gitBranches.current ? 'current' : ''}">
+                <${Icons.Branch} />
+                <span>${b}</span>
+                ${b === gitBranches.current && html`<span style=${{ fontSize: '0.7rem', marginLeft: 'auto', color: 'var(--success)' }}>current</span>`}
+              </div>
+            `)}
+          </div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+// ============================================================
+// Components: Diff Tab (right panel)
+// ============================================================
+function DiffPanel({ diffs }) {
+  return html`
+    <div style=${{ flex: 1, overflow: 'auto', padding: '8px' }}>
+      ${diffs.length === 0 && html`
+        <div class="empty-state" style=${{ padding: '40px 16px' }}>
+          <p style=${{ fontSize: '0.8rem' }}>No diffs to show</p>
+        </div>
+      `}
+      ${diffs.map((d, i) => html`
+        <div key=${i} class="diff-card">
+          <div class="diff-card-header">
+            <span>${d.title || d.file || 'Diff'}</span>
+            <span style=${{ color: 'var(--muted)', fontSize: '0.72rem' }}>${formatTime(d.timestamp)}</span>
+          </div>
+          <div class="diff-card-body">
+            ${parseDiffContent(d.content || d.diff || '').map((l, j) => html`
+              <div key=${j} class="diff-line-${l.type}">${l.text}</div>
+            `)}
+          </div>
+        </div>
+      `)}
+    </div>
+  `;
+}
+
+// ============================================================
+// Components: Preview Tab
+// ============================================================
+function PreviewTab({ previewUrl }) {
+  if (!previewUrl) {
+    return html`
+      <div class="empty-state" style=${{ flex: 1 }}>
+        <div class="empty-icon">👁</div>
+        <h3>No preview</h3>
+        <p>Waiting for preview URL from agent...</p>
+      </div>
+    `;
+  }
+  return html`<iframe class="preview-frame" src=${previewUrl} />`;
+}
+
+// ============================================================
+// Components: Right Panel
+// ============================================================
+function RightPanel({ sessionId, fileTree, previewUrl, diffs, collapsed, onToggle }) {
+  const [activeTab, setActiveTab] = useState('files');
+
+  return html`
+    <${Fragment}>
+      <button class="right-toggle" onClick=${onToggle} title=${collapsed ? 'Show panel' : 'Hide panel'}>
+        ${collapsed ? html`<${Icons.ChevronLeft} />` : html`<${Icons.ChevronRight} />`}
+      </button>
+      <div class="right-panel ${collapsed ? 'collapsed' : ''}">
+        <div class="tab-bar">
+          <div class="tab ${activeTab === 'files' ? 'active' : ''}" onClick=${() => setActiveTab('files')}>Files</div>
+          <div class="tab ${activeTab === 'git' ? 'active' : ''}" onClick=${() => setActiveTab('git')}>Git</div>
+          <div class="tab ${activeTab === 'diff' ? 'active' : ''}" onClick=${() => setActiveTab('diff')}>Diff</div>
+          <div class="tab ${activeTab === 'preview' ? 'active' : ''}" onClick=${() => setActiveTab('preview')}>Preview</div>
+        </div>
+        <div style=${{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          ${activeTab === 'files' && html`<${FilesTab} sessionId=${sessionId} fileTree=${fileTree} />`}
+          ${activeTab === 'git' && html`<${GitTab} sessionId=${sessionId} />`}
+          ${activeTab === 'diff' && html`<${DiffPanel} diffs=${diffs} />`}
+          ${activeTab === 'preview' && html`<${PreviewTab} previewUrl=${previewUrl} />`}
+        </div>
+      </div>
+    <//>
+  `;
+}
+
+// ============================================================
+// Components: Dashboard
+// ============================================================
+function Dashboard({ sessions, onSelectSession, onCreateSession, activities }) {
+  return html`
+    <div class="dashboard">
+      <div class="dashboard-header">
+        <h1>Welcome to MADE</h1>
+        <p>Multiplayer Agent Development Environment — collaborate with AI agents in real-time</p>
+      </div>
+
+      <div class="dashboard-grid">
+        <div class="new-session-card" onClick=${onCreateSession}>
+          <${Icons.Plus} />
+          <span>New Session</span>
+        </div>
+        ${sessions.map(s => html`
+          <div key=${s.id} class="session-card" onClick=${() => onSelectSession(s.id)}>
+            <div class="card-top">
+              <span class="card-name">${s.name}</span>
+              <div class="status-dot ${s.status}" style=${{ width: '10px', height: '10px' }} />
+            </div>
+            <div class="card-branch">🌿 ${s.branch.replace('session/', '').slice(0, 12)}</div>
+            <div class="card-stats">
+              <span>Status: ${s.status}</span>
+              <span>Created: ${formatTime(s.createdAt)}</span>
+            </div>
+            <div class="card-time">Last active ${formatTime(s.updatedAt)}</div>
+          </div>
+        `)}
+      </div>
+
+      ${activities.length > 0 && html`
+        <div class="activity-section">
+          <h2>Activity Feed</h2>
+          <div class="activity-feed">
+            ${activities.slice(0, 20).map((a, i) => html`
+              <div key=${i} class="activity-item">
+                <div class="act-icon ${a.type || 'message'}">
+                  ${a.type === 'commit' ? '📝' : a.type === 'join' ? '👋' : '💬'}
+                </div>
+                <span class="act-text">${a.text}</span>
+                <span class="act-time">${formatTime(a.time)}</span>
+              </div>
+            `)}
+          </div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+// ============================================================
+// Components: New Session Modal
+// ============================================================
+function NewSessionModal({ onClose, onSubmit }) {
+  const [name, setName] = useState('');
+  return html`
+    <div class="modal-overlay" onClick=${onClose}>
+      <div class="modal" style=${{ maxWidth: '420px' }} onClick=${e => e.stopPropagation()}>
+        <div class="modal-header">
+          <h3>New Session</h3>
+          <button onClick=${onClose}><${Icons.Close} /></button>
+        </div>
+        <div class="modal-body">
+          <label style=${{ fontSize: '0.82rem', color: 'var(--muted)', display: 'block', marginBottom: '6px' }}>Session Name</label>
+          <input
+            class="new-session-modal-input"
+            placeholder="My awesome project..."
+            value=${name}
+            onInput=${e => setName(e.target.value)}
+            onKeyDown=${e => e.key === 'Enter' && name.trim() && onSubmit(name.trim())}
+            autoFocus
+          />
+        </div>
+        <div class="modal-actions">
+          <button class="btn-secondary" onClick=${onClose}>Cancel</button>
+          <button class="btn-primary" onClick=${() => name.trim() && onSubmit(name.trim())}>Create</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// Main App Component
+// ============================================================
+function App() {
+  const [wsStatus, setWsStatus] = useState('disconnected');
+  const [sessions, setSessions] = useState([]);
+  const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [messages, setMessages] = useState({});
+  const [users, setUsers] = useState([]);
+  const [userId, setUserId] = useState(null);
+  const [centerTab, setCenterTab] = useState('chat');
+  const [terminalOutput, setTerminalOutput] = useState('');
+  const [planSteps, setPlanSteps] = useState([]);
+  const [fileTree, setFileTree] = useState([]);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [diffs, setDiffs] = useState([]);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [showNewSessionModal, setShowNewSessionModal] = useState(false);
+  const [activities, setActivities] = useState([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+
+  // Connect WebSocket on mount
+  useEffect(() => {
+    ws.onStatusChange = (status) => setWsStatus(status);
+    ws.connect();
+    return () => { ws.onStatusChange = null; };
+  }, []);
+
+  // On connect: request session list
+  useEffect(() => {
+    if (wsStatus === 'connected') {
+      ws.send(WS_EVENTS.SessionList, {});
+    }
+  }, [wsStatus]);
+
+  // Load messages when session changes
+  useEffect(() => {
+    if (currentSessionId) {
+      setLoadingMessages(true);
+      setTerminalOutput('');
+      setPlanSteps([]);
+      setFileTree([]);
+      setDiffs([]);
+      setPreviewUrl('');
+      fetch(`/api/sessions/${currentSessionId}/messages?limit=100`)
+        .then(r => r.json())
+        .then(msgs => {
+          setMessages(prev => ({ ...prev, [currentSessionId]: msgs }));
+          setLoadingMessages(false);
+        })
+        .catch(() => setLoadingMessages(false));
+
+      // Join the session
+      ws.send(WS_EVENTS.SessionJoin, { sessionId: currentSessionId }, currentSessionId);
+      ws.send(WS_EVENTS.FileList, { sessionId: currentSessionId }, currentSessionId);
+    }
+  }, [currentSessionId]);
+
+  // WS event handlers
+  useWS(WS_EVENTS.SessionList, useCallback((msg) => {
+    if (Array.isArray(msg.payload)) setSessions(msg.payload);
+  }, []));
+
+  useWS(WS_EVENTS.SessionCreate, useCallback((msg) => {
+    if (msg.payload) {
+      setSessions(prev => {
+        const exists = prev.find(s => s.id === msg.payload.id);
+        if (exists) return prev;
+        return [...prev, msg.payload];
+      });
+    }
+  }, []));
+
+  useWS(WS_EVENTS.UserJoin, useCallback((msg) => {
+    if (msg.payload?.userId) {
+      setUserId(msg.payload.userId);
+    }
+  }, []));
+
+  useWS(WS_EVENTS.ChatMessage, useCallback((msg) => {
+    if (msg.payload?.sessionId) {
+      setMessages(prev => ({
+        ...prev,
+        [msg.payload.sessionId]: [...(prev[msg.payload.sessionId] || []), msg.payload],
+      }));
+    }
+  }, []));
+
+  useWS(WS_EVENTS.TerminalOutput, useCallback((msg) => {
+    if (msg.payload?.data) {
+      setTerminalOutput(prev => prev + msg.payload.data);
+    }
+  }, []));
+
+  useWS(WS_EVENTS.PlanCreate, useCallback((msg) => {
+    if (msg.payload?.steps) setPlanSteps(msg.payload.steps);
+  }, []));
+
+  useWS(WS_EVENTS.PlanUpdate, useCallback((msg) => {
+    if (msg.payload?.stepId) {
+      setPlanSteps(prev => prev.map(s =>
+        s.id === msg.payload.stepId ? { ...s, ...(msg.payload.update || {}) } : s
+      ));
+    }
+  }, []));
+
+  useWS(WS_EVENTS.FileList, useCallback((msg) => {
+    if (msg.payload?.files) setFileTree(msg.payload.files);
+  }, []));
+
+  useWS(WS_EVENTS.DiffShow, useCallback((msg) => {
+    if (msg.payload) {
+      setDiffs(prev => [msg.payload, ...prev].slice(0, 20));
+    }
+  }, []));
+
+  useWS(WS_EVENTS.PreviewUrl, useCallback((msg) => {
+    if (msg.payload?.url) setPreviewUrl(msg.payload.url);
+  }, []));
+
+  useWS(WS_EVENTS.Activity, useCallback((msg) => {
+    if (msg.payload) {
+      setActivities(prev => [{
+        type: msg.payload.action,
+        text: msg.payload.message || msg.payload.action || 'Activity',
+        time: Date.now(),
+      }, ...prev].slice(0, 50));
+    }
+  }, []));
+
+  useWS(WS_EVENTS.AgentOutput, useCallback((msg) => {
+    // Treat agent output as chat message if in session
+    if (msg.payload?.data && msg.sessionId) {
+      const agentMsg = {
+        id: 'agent-' + Date.now(),
+        sessionId: msg.sessionId,
+        userId: 'agent',
+        content: msg.payload.data,
+        type: 'text',
+        timestamp: Date.now(),
+      };
+      setMessages(prev => ({
+        ...prev,
+        [msg.sessionId]: [...(prev[msg.sessionId] || []), agentMsg],
+      }));
+    }
+  }, []));
+
+  // Handlers
+  const handleSelectSession = useCallback((id) => {
+    setCurrentSessionId(id);
+  }, []);
+
+  const handleCreateSession = useCallback((name) => {
+    fetch('/api/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+      .then(r => r.json())
+      .then(session => {
+        if (session?.id) {
+          setSessions(prev => [...prev, session]);
+          setCurrentSessionId(session.id);
+          setShowNewSessionModal(false);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSendMessage = useCallback((content, type) => {
+    if (!currentSessionId || !content) return;
+    ws.send(WS_EVENTS.ChatMessage, { sessionId: currentSessionId, content, type }, currentSessionId);
+  }, [currentSessionId]);
+
+  const currentMessages = messages[currentSessionId] || [];
+
+  // No session selected → Dashboard
+  if (!currentSessionId) {
+    return html`
+      <div class="app">
+        <${Header} wsStatus=${wsStatus} userId=${userId} sessions=${sessions} currentSessionId=${null} />
+        <${Dashboard}
+          sessions=${sessions}
+          onSelectSession=${handleSelectSession}
+          onCreateSession=${() => setShowNewSessionModal(true)}
+          activities=${activities}
+        />
+        ${showNewSessionModal && html`<${NewSessionModal} onClose=${() => setShowNewSessionModal(false)} onSubmit=${handleCreateSession} />`}
+      </div>
+    `;
+  }
+
+  // Session view
+  return html`
+    <div class="app">
+      <${Header} wsStatus=${wsStatus} userId=${userId} sessions=${sessions} currentSessionId=${currentSessionId} />
+      <div class="main">
+        <${Sidebar}
+          sessions=${sessions}
+          currentSessionId=${currentSessionId}
+          onSelectSession=${handleSelectSession}
+          onCreateSession=${() => setShowNewSessionModal(true)}
+        />
+        <div class="center-panel">
+          <div class="tab-bar">
+            <div class="tab ${centerTab === 'chat' ? 'active' : ''}" onClick=${() => setCenterTab('chat')}>💬 Chat</div>
+            <div class="tab ${centerTab === 'terminal' ? 'active' : ''}" onClick=${() => setCenterTab('terminal')}>
+              <${Icons.Terminal} /> Terminal
+            </div>
+            <div class="tab ${centerTab === 'plan' ? 'active' : ''}" onClick=${() => setCenterTab('plan')}>📋 Plan</div>
+          </div>
+          <div class="content-area" style=${{ display: 'flex', flexDirection: 'column' }}>
+            ${loadingMessages && html`<div class="loading-spinner"><div class="spinner" /></div>`}
+            ${!loadingMessages && centerTab === 'chat' && html`
+              <${ChatTab} messages=${currentMessages} users=${users} sessionId=${currentSessionId} onSend=${handleSendMessage} />
+            `}
+            ${centerTab === 'terminal' && html`
+              <${TerminalTab} sessionId=${currentSessionId} terminalOutput=${terminalOutput} />
+            `}
+            ${centerTab === 'plan' && html`
+              <${PlanTab} sessionId=${currentSessionId} planSteps=${planSteps} />
+            `}
+          </div>
+        </div>
+        <${RightPanel}
+          sessionId=${currentSessionId}
+          fileTree=${fileTree}
+          previewUrl=${previewUrl}
+          diffs=${diffs}
+          collapsed=${rightCollapsed}
+          onToggle=${() => setRightCollapsed(!rightCollapsed)}
+        />
+      </div>
+      ${showNewSessionModal && html`<${NewSessionModal} onClose=${() => setShowNewSessionModal(false)} onSubmit=${handleCreateSession} />`}
+    </div>
+  `;
+}
+
+// ============================================================
+// Mount
+// ============================================================
+const root = ReactDOMClient.createRoot(document.getElementById('root'));
+root.render(html`<${App} />`);
+
+</script>
+</body>
+</html>
