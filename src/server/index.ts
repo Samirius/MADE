@@ -82,19 +82,29 @@ app.get('/api/sessions', (_req, res) => {
 
 // Create session
 app.post('/api/sessions', (req, res) => {
-  const { name } = req.body as { name?: string };
+  const { name, repoUrl } = req.body as { name?: string; repoUrl?: string };
   const session = sessionManager.create(name);
 
-  // Auto-init a git repo in the workspace
-  gitManager
-    .init(session.id)
-    .then(() => {
-      res.json(session);
-    })
-    .catch(() => {
-      // Still return session even if git init fails
-      res.json(session);
+  if (repoUrl) {
+    // Clone the repo into the workspace
+    import('simple-git').then(({ simpleGit }) => {
+      simpleGit().clone(repoUrl, session.workspacePath).then(() => {
+        res.json(session);
+      }).catch((err: Error) => {
+        res.json({ ...session, cloneError: err.message });
+      });
     });
+  } else {
+    // Auto-init a git repo in the workspace
+    gitManager
+      .init(session.id)
+      .then(() => {
+        res.json(session);
+      })
+      .catch(() => {
+        res.json(session);
+      });
+  }
 });
 
 // Get session details
@@ -112,6 +122,17 @@ app.get('/api/sessions/:id/messages', (req, res) => {
   const limit = parseInt(req.query.limit as string, 10) || 100;
   const messages = sessionManager.getMessages(req.params.id, limit);
   res.json(messages);
+});
+
+// Delete a session
+app.delete('/api/sessions/:id', (req, res) => {
+  const session = sessionManager.get(req.params.id);
+  if (!session) {
+    res.status(404).json({ error: 'Session not found' });
+    return;
+  }
+  sessionManager.close(req.params.id);
+  res.json({ success: true });
 });
 
 // File upload

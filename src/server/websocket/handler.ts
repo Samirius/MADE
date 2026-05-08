@@ -46,6 +46,16 @@ export class WSHandler {
           payload: { data },
           sessionId,
         });
+        // Detect dev server URLs in agent output
+        const portMatch = data.match(/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{2,5})/);
+        if (portMatch) {
+          const port = portMatch[1];
+          this.broadcastToSession(sessionId, {
+            type: WSEventType.PreviewUrl,
+            payload: { url: `http://localhost:${port}` },
+            sessionId,
+          });
+        }
       },
     );
 
@@ -57,6 +67,29 @@ export class WSHandler {
           payload: { exitCode: code },
           sessionId,
         });
+        // Auto-emit git status and diff after agent finishes
+        const workspace = this.services.sessionManager.getWorkspacePath(sessionId);
+        if (workspace) {
+          this.services.gitManager.status(sessionId).then((status: import('../../shared/types.js').GitStatusResult) => {
+            this.broadcastToSession(sessionId, {
+              type: WSEventType.GitStatus,
+              payload: status,
+              sessionId,
+            });
+            if (
+              status.modified.length > 0 ||
+              status.staged.length > 0
+            ) {
+              this.services.gitManager.diff(sessionId).then((diff: string) => {
+                this.broadcastToSession(sessionId, {
+                  type: WSEventType.DiffShow,
+                  payload: { title: 'Agent changes', diff, timestamp: Date.now() },
+                  sessionId,
+                });
+              }).catch(() => {});
+            }
+          }).catch(() => {});
+        }
       },
     );
 
@@ -80,6 +113,16 @@ export class WSHandler {
           payload: { data },
           sessionId,
         });
+        // Detect dev server URLs in terminal output
+        const portMatch = data.match(/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{2,5})/);
+        if (portMatch) {
+          const port = portMatch[1];
+          this.broadcastToSession(sessionId, {
+            type: WSEventType.PreviewUrl,
+            payload: { url: `http://localhost:${port}` },
+            sessionId,
+          });
+        }
       },
     );
 
@@ -176,6 +219,8 @@ export class WSHandler {
             sessionId,
             userId: client.userId,
           });
+          const preview = content.length > 60 ? content.slice(0, 60) + '...' : content;
+          this.emitActivity(sessionId, 'message', `${client.userId}: ${preview}`);
         }
         break;
       }
@@ -200,6 +245,7 @@ export class WSHandler {
           payload: session,
           userId: client.userId,
         });
+        this.emitActivity(session.id, 'session_create', `Session "${name || 'Untitled'}" created`);
         break;
       }
 
@@ -210,8 +256,17 @@ export class WSHandler {
         if (joined) {
           this.broadcastToSession(sessionId, {
             type: WSEventType.UserJoin,
-            payload: { userId: client.userId },
+            payload: { userId: client.userId, name: client.userId },
             sessionId,
+          });
+          this.emitActivity(sessionId, 'join', `${client.userId} joined`);
+          // Start file watcher for this session if not already watching
+          this.services.fileManager.watch(sessionId, (event, filePath) => {
+            this.broadcastToSession(sessionId, {
+              type: WSEventType.FileChange,
+              payload: { event, filePath },
+              sessionId,
+            });
           });
         }
         break;
@@ -397,7 +452,24 @@ export class WSHandler {
         const workspace = sessionManager.getWorkspacePath(sessionId);
         if (workspace) {
           agentManager.spawn(sessionId, workspace, config);
+          this.emitActivity(sessionId, 'agent_start', `Agent started: ${config.cmd}`);
         }
+        break;
+      }
+
+      case WSEventType.AgentInput: {
+        const { sessionId, text } = msg.payload as { sessionId: string; text: string };
+        agentManager.sendInput(sessionId, text);
+        break;
+      }
+
+      case WSEventType.AgentStatus: {
+        const { sessionId } = msg.payload as { sessionId: string };
+        const status = agentManager.getStatus(sessionId);
+        this.send(client.ws, {
+          type: WSEventType.AgentStatus,
+          payload: { sessionId, ...status },
+        });
         break;
       }
 
@@ -481,6 +553,15 @@ export class WSHandler {
         client.ws.send(payload);
       }
     }
+  }
+
+  /** Broadcast an activity event to all clients in a session. */
+  private emitActivity(sessionId: string, action: string, message: string): void {
+    this.broadcastToSession(sessionId, {
+      type: WSEventType.Activity,
+      payload: { action, message, timestamp: Date.now() },
+      sessionId,
+    });
   }
 }
 

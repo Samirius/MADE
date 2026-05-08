@@ -97,6 +97,9 @@ input, textarea { font-family: var(--font); outline: none; border: none; backgro
 .session-item .session-info { flex: 1; min-width: 0; }
 .session-item .session-name { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .session-item .session-meta { font-size: 0.72rem; color: var(--muted); display: flex; gap: 8px; }
+.session-delete-btn { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px; border-radius: 4px; opacity: 0; transition: opacity 0.15s, color 0.15s; display: flex; align-items: center; }
+.session-item:hover .session-delete-btn { opacity: 1; }
+.session-delete-btn:hover { color: var(--error); background: var(--surface2); }
 
 /* Center panel */
 .center-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
@@ -366,6 +369,14 @@ input, textarea { font-family: var(--font); outline: none; border: none; backgro
 
 /* Mention highlight */
 .mention { color: var(--accent); font-weight: 600; background: var(--accent-dim); padding: 1px 4px; border-radius: 3px; }
+
+/* Toast notifications */
+.toast { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: 8px; font-size: 0.85rem; font-weight: 500; color: #fff; box-shadow: 0 4px 20px rgba(0,0,0,0.4); cursor: pointer; animation: toast-in 0.25s ease; }
+.toast.error { background: var(--error); }
+.toast.success { background: var(--success); }
+.toast.info { background: #3b82f6; }
+.toast-close { background: none; border: none; color: rgba(255,255,255,0.7); cursor: pointer; padding: 2px; display: flex; }
+@keyframes toast-in { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 </style>
 </head>
 <body>
@@ -404,8 +415,10 @@ const WS_EVENTS = {
   GitCommit:     'git:commit',
   GitBranch:     'git:branch',
   AgentStart:    'agent:start',
+  AgentInput:    'agent:input',
   AgentOutput:   'agent:output',
   AgentStop:     'agent:stop',
+  AgentStatus:   'agent:status',
   PlanCreate:    'plan:create',
   PlanUpdate:    'plan:update',
   DiffShow:      'diff:show',
@@ -534,6 +547,76 @@ function escapeHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function ansiToHtml(s) {
+  const ansiColors = {
+    '30': '#555', '31': '#e06c75', '32': '#98c379', '33': '#e5c07b',
+    '34': '#61afef', '35': '#c678dd', '36': '#56b6c2', '37': '#abb2bf',
+    '90': '#636d83', '91': '#e06c75', '92': '#98c379', '93': '#e5c07b',
+    '94': '#61afef', '95': '#c678dd', '96': '#56b6c2', '97': '#abb2bf',
+  };
+  const bgColors = {
+    '40': '#282c34', '41': '#be5046', '42': '#2e8b57', '43': '#a68a00',
+    '44': '#3b6ea5', '45': '#803378', '46': '#2b7694', '47': '#3e4451',
+    '100': '#3e4451',
+  };
+  s = escapeHtml(s);
+  let result = '';
+  let i = 0;
+  let openSpan = false;
+  let currentFg = '';
+  let currentBg = '';
+  let bold = false;
+  const openTag = () => {
+    if (openSpan) result += '</span>';
+    const styles = [];
+    if (bold) styles.push('font-weight:bold');
+    if (currentFg) styles.push('color:' + currentFg);
+    if (currentBg) styles.push('background:' + currentBg);
+    if (styles.length > 0) {
+      result += '<span style="' + styles.join(';') + '">';
+      openSpan = true;
+    } else {
+      openSpan = false;
+    }
+  };
+  while (i < s.length) {
+    if (s[i] === '\x1b' && i + 1 < s.length && s[i + 1] === '[') {
+      const m = s.substring(i).match(/^\x1b\[([0-9;]*)m/);
+      if (m) {
+        const codes = m[1] ? m[1].split(';').map(Number) : [0];
+        for (const c of codes) {
+          if (c === 0) { currentFg = ''; currentBg = ''; bold = false; openSpan = false; result += '</span>'; }
+          else if (c === 1) { bold = true; }
+          else if (c >= 30 && c <= 37) { currentFg = ansiColors[String(c)] || ''; }
+          else if (c >= 90 && c <= 97) { currentFg = ansiColors[String(c)] || ''; }
+          else if (c >= 40 && c <= 47) { currentBg = bgColors[String(c)] || ''; }
+          else if (c === 39) { currentFg = ''; }
+          else if (c === 49) { currentBg = ''; }
+        }
+        openTag();
+        i += m[0].length;
+        continue;
+      }
+    }
+    // Strip other CSI sequences (cursor movement etc)
+    if (s[i] === '\x1b' && i + 1 < s.length && s[i + 1] === '[') {
+      const m2 = s.substring(i).match(/^\x1b\[[0-9;]*[A-Za-z]/);
+      if (m2) { i += m2[0].length; continue; }
+    }
+    // Strip OSC sequences (title setting etc)
+    if (s[i] === '\x1b' && i + 1 < s.length && s[i + 1] === ']') {
+      const end = s.indexOf('\x07', i);
+      if (end !== -1) { i = end + 1; continue; }
+      const bel = s.indexOf('\x1b\\', i);
+      if (bel !== -1) { i = bel + 2; continue; }
+    }
+    result += s[i];
+    i++;
+  }
+  if (openSpan) result += '</span>';
+  return result;
+}
+
 function parseDiffContent(content) {
   const lines = (content || '').split('\n');
   return lines.map(line => {
@@ -591,6 +674,20 @@ function useWS(eventType, handler) {
 }
 
 // ============================================================
+// Components: Toast
+// ============================================================
+function Toast({ toast, onClose }) {
+  if (!toast) return null;
+  const bg = toast.type === 'error' ? 'var(--error)' : toast.type === 'success' ? 'var(--success)' : 'var(--accent)';
+  return html`
+    <div class="toast ${toast.type || 'info'}" onClick=${onClose}>
+      <span>${toast.message}</span>
+      <button class="toast-close" onClick=${onClose}><${Icons.Close} /></button>
+    </div>
+  `;
+}
+
+// ============================================================
 // Components: Header
 // ============================================================
 function Header({ wsStatus, userId, sessions, currentSessionId }) {
@@ -624,7 +721,7 @@ function Header({ wsStatus, userId, sessions, currentSessionId }) {
 // ============================================================
 // Components: Sidebar (Session List)
 // ============================================================
-function Sidebar({ sessions, currentSessionId, onSelectSession, onCreateSession }) {
+function Sidebar({ sessions, currentSessionId, onSelectSession, onCreateSession, onDeleteSession }) {
   return html`
     <div class="sidebar">
       <div class="sidebar-header">
@@ -642,16 +739,20 @@ function Sidebar({ sessions, currentSessionId, onSelectSession, onCreateSession 
           <div
             key=${s.id}
             class="session-item ${s.id === currentSessionId ? 'active' : ''}"
-            onClick=${() => onSelectSession(s.id)}
           >
-            <div class="status-dot ${s.status}" />
-            <div class="session-info">
-              <div class="session-name">${s.name}</div>
-              <div class="session-meta">
-                <span>🌿 ${s.branch.replace('session/', '').slice(0, 8)}</span>
-                <span>${formatTime(s.updatedAt)}</span>
+            <div class="session-item-main" onClick=${() => onSelectSession(s.id)} style=${{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <div class="status-dot ${s.status}" />
+              <div class="session-info">
+                <div class="session-name">${s.name}</div>
+                <div class="session-meta">
+                  <span>🌿 ${s.branch.replace('session/', '').slice(0, 8)}</span>
+                  <span>${formatTime(s.updatedAt)}</span>
+                </div>
               </div>
             </div>
+            <button class="session-delete-btn" onClick=${(e) => { e.stopPropagation(); onDeleteSession(s.id); }} title="Delete session">
+              <${Icons.Close} />
+            </button>
           </div>
         `)}
       </div>
@@ -662,7 +763,7 @@ function Sidebar({ sessions, currentSessionId, onSelectSession, onCreateSession 
 // ============================================================
 // Components: Chat Tab
 // ============================================================
-function ChatTab({ messages, users, sessionId, onSend }) {
+function ChatTab({ messages, users, sessionId, onSend, agentRunning, onAgentRunningChange }) {
   const [input, setInput] = useState('');
   const [agentMode, setAgentMode] = useState(false);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
@@ -758,18 +859,25 @@ function ChatTab({ messages, users, sessionId, onSend }) {
   const handleSend = useCallback(() => {
     const text = input.trim();
     if (!text || !sessionId) return;
-    // If agent mode is on, send agent:start to spawn an agent
+    // If agent mode is on, interact with agent
     if (agentMode) {
-      ws.send(WS_EVENTS.AgentStart, {
-        sessionId,
-        config: { cmd: 'claude' },
-      }, sessionId);
+      if (agentRunning) {
+        // Agent is already running — send text as stdin input
+        ws.send(WS_EVENTS.AgentInput, { sessionId, text: text + '\n' }, sessionId);
+      } else {
+        // No agent running — spawn one with the prompt as initial context
+        ws.send(WS_EVENTS.AgentStart, {
+          sessionId,
+          config: { cmd: 'claude' },
+        }, sessionId);
+        onAgentRunningChange(true);
+      }
     }
     // Always send the chat message so the user's prompt appears in chat
     onSend(text, agentMode ? 'plan' : 'text');
     setInput('');
     setShowAutocomplete(false);
-  }, [input, sessionId, agentMode, onSend]);
+  }, [input, sessionId, agentMode, onSend, agentRunning, onAgentRunningChange]);
 
   const handleImageUpload = useCallback((e) => {
     const file = e.target.files?.[0];
@@ -885,7 +993,7 @@ function ChatTab({ messages, users, sessionId, onSend }) {
         </button>
         <button class="agent-toggle ${agentMode ? 'on' : 'off'}" onClick=${() => setAgentMode(!agentMode)} title="Toggle agent mode">
           <${Icons.Bot} />
-          <span>Agent</span>
+          <span>Agent${agentMode && agentRunning ? ' ●' : agentMode ? ' ○' : ''}</span>
         </button>
         <button class="input-btn send-btn" onClick=${handleSend} title="Send message">
           <${Icons.Send} />
@@ -973,7 +1081,7 @@ function TerminalTab({ sessionId, terminalOutput }) {
         onKeyDown=${handleKeyDown}
         autoFocus
       />
-      <div dangerouslySetInnerHTML=${{ __html: escapeHtml(terminalOutput || '$ ') }} />
+      <div dangerouslySetInnerHTML=${{ __html: ansiToHtml(terminalOutput || '$ ') }} />
       <span class="terminal-cursor" />
     </div>
   `;
@@ -1001,8 +1109,12 @@ function PlanTab({ sessionId, planSteps }) {
 
   const handleExecuteStep = useCallback((stepId) => {
     if (!sessionId) return;
+    const step = (planSteps || []).find(s => s.id === stepId);
+    if (!step) return;
     ws.send(WS_EVENTS.PlanUpdate, { sessionId, stepId, update: { status: 'in_progress' } }, sessionId);
-  }, [sessionId]);
+    // Send the step description as agent input (spawn if not running, else send stdin)
+    ws.send(WS_EVENTS.AgentInput, { sessionId, text: step.description + '\n' }, sessionId);
+  }, [sessionId, planSteps]);
 
   return html`
     <div class="plan-container">
@@ -1025,11 +1137,18 @@ function PlanTab({ sessionId, planSteps }) {
             <div class="step-desc">${step.description}</div>
             ${step.output && html`<div class="step-output">${step.output}</div>`}
           </div>
-          ${step.status === 'pending' && html`
-            <div class="step-actions">
+          <div class="step-actions">
+            ${step.status === 'pending' && html`
               <button onClick=${() => handleExecuteStep(step.id)}><${Icons.Play} /> Run</button>
-            </div>
-          `}
+            `}
+            ${step.status === 'in_progress' && html`
+              <button style=${{ color: 'var(--success)' }} onClick=${() => ws.send(WS_EVENTS.PlanUpdate, { sessionId, stepId: step.id, update: { status: 'done' } }, sessionId)}>✓ Done</button>
+              <button style=${{ color: 'var(--error)' }} onClick=${() => ws.send(WS_EVENTS.PlanUpdate, { sessionId, stepId: step.id, update: { status: 'failed' } }, sessionId)}>✕ Fail</button>
+            `}
+            ${step.status === 'done' && html`
+              <button onClick=${() => ws.send(WS_EVENTS.PlanUpdate, { sessionId, stepId: step.id, update: { status: 'pending' } }, sessionId)}>↻ Reset</button>
+            `}
+          </div>
         </div>
       `)}
       ${showAddStep && html`
@@ -1388,6 +1507,11 @@ function Dashboard({ sessions, onSelectSession, onCreateSession, activities }) {
 // ============================================================
 function NewSessionModal({ onClose, onSubmit }) {
   const [name, setName] = useState('');
+  const [repoUrl, setRepoUrl] = useState('');
+  const submit = () => {
+    const n = name.trim();
+    if (n) onSubmit(n, repoUrl.trim() || undefined);
+  };
   return html`
     <div class="modal-overlay" onClick=${onClose}>
       <div class="modal" style=${{ maxWidth: '420px' }} onClick=${e => e.stopPropagation()}>
@@ -1402,13 +1526,21 @@ function NewSessionModal({ onClose, onSubmit }) {
             placeholder="My awesome project..."
             value=${name}
             onInput=${e => setName(e.target.value)}
-            onKeyDown=${e => e.key === 'Enter' && name.trim() && onSubmit(name.trim())}
+            onKeyDown=${e => e.key === 'Enter' && submit()}
             autoFocus
+          />
+          <label style=${{ fontSize: '0.82rem', color: 'var(--muted)', display: 'block', marginBottom: '6px', marginTop: '14px' }}>Clone Repository (optional)</label>
+          <input
+            class="new-session-modal-input"
+            placeholder="https://github.com/user/repo.git"
+            value=${repoUrl}
+            onInput=${e => setRepoUrl(e.target.value)}
+            onKeyDown=${e => e.key === 'Enter' && submit()}
           />
         </div>
         <div class="modal-actions">
           <button class="btn-secondary" onClick=${onClose}>Cancel</button>
-          <button class="btn-primary" onClick=${() => name.trim() && onSubmit(name.trim())}>Create</button>
+          <button class="btn-primary" onClick=${submit}>Create</button>
         </div>
       </div>
     </div>
@@ -1435,6 +1567,8 @@ function App() {
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
   const [activities, setActivities] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [agentRunning, setAgentRunning] = useState(false);
+  const [toast, setToast] = useState(null);
 
   // Connect WebSocket on mount
   useEffect(() => {
@@ -1442,6 +1576,13 @@ function App() {
     ws.connect();
     return () => { ws.onStatusChange = null; };
   }, []);
+
+  // Auto-dismiss toast after 4 seconds
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   // On connect: request session list
   useEffect(() => {
@@ -1540,6 +1681,13 @@ function App() {
     if (msg.payload?.files) setFileTree(msg.payload.files);
   }, []));
 
+  useWS(WS_EVENTS.FileChange, useCallback((msg) => {
+    // Refresh file tree when files change
+    if (currentSessionId) {
+      ws.send(WS_EVENTS.FileList, { sessionId: currentSessionId }, currentSessionId);
+    }
+  }, [currentSessionId]));
+
   useWS(WS_EVENTS.DiffShow, useCallback((msg) => {
     if (msg.payload) {
       setDiffs(prev => [msg.payload, ...prev].slice(0, 20));
@@ -1592,7 +1740,8 @@ function App() {
   }, []));
 
   useWS(WS_EVENTS.AgentStop, useCallback((msg) => {
-    // Flush any remaining buffered agent output immediately
+    // Agent stopped — reset running state and flush buffer
+    setAgentRunning(false);
     if (msg.sessionId && window._agentBuffer?.[msg.sessionId]) {
       const sid = msg.sessionId;
       const accumulated = window._agentBuffer[sid];
@@ -1614,16 +1763,25 @@ function App() {
     }
   }, []));
 
+  useWS(WS_EVENTS.AgentStatus, useCallback((msg) => {
+    if (msg.payload) {
+      setAgentRunning(!!msg.payload.running);
+    }
+  }, []));
+
   // Handlers
   const handleSelectSession = useCallback((id) => {
     setCurrentSessionId(id);
+    setAgentRunning(false);
+    // Query agent status for the new session
+    ws.send(WS_EVENTS.AgentStatus, { sessionId: id }, id);
   }, []);
 
-  const handleCreateSession = useCallback((name) => {
+  const handleCreateSession = useCallback((name, repoUrl) => {
     fetch('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, repoUrl }),
     })
       .then(r => r.json())
       .then(session => {
@@ -1631,10 +1789,25 @@ function App() {
           setSessions(prev => [...prev, session]);
           setCurrentSessionId(session.id);
           setShowNewSessionModal(false);
+          if (session.cloneError) {
+            setToast({ type: 'error', message: 'Clone failed: ' + session.cloneError });
+          }
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        setToast({ type: 'error', message: 'Failed to create session' });
+      });
   }, []);
+
+  const handleDeleteSession = useCallback((id) => {
+    fetch(`/api/sessions/${id}`, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(() => {
+        setSessions(prev => prev.filter(s => s.id !== id));
+        if (currentSessionId === id) setCurrentSessionId(null);
+      })
+      .catch(() => {});
+  }, [currentSessionId]);
 
   const handleSendMessage = useCallback((content, type) => {
     if (!currentSessionId || !content) return;
@@ -1655,6 +1828,7 @@ function App() {
           activities=${activities}
         />
         ${showNewSessionModal && html`<${NewSessionModal} onClose=${() => setShowNewSessionModal(false)} onSubmit=${handleCreateSession} />`}
+        <${Toast} toast=${toast} onClose=${() => setToast(null)} />
       </div>
     `;
   }
@@ -1669,6 +1843,7 @@ function App() {
           currentSessionId=${currentSessionId}
           onSelectSession=${handleSelectSession}
           onCreateSession=${() => setShowNewSessionModal(true)}
+          onDeleteSession=${handleDeleteSession}
         />
         <div class="center-panel">
           <div class="tab-bar">
@@ -1681,7 +1856,7 @@ function App() {
           <div class="content-area" style=${{ display: 'flex', flexDirection: 'column' }}>
             ${loadingMessages && html`<div class="loading-spinner"><div class="spinner" /></div>`}
             ${!loadingMessages && centerTab === 'chat' && html`
-              <${ChatTab} messages=${currentMessages} users=${users} sessionId=${currentSessionId} onSend=${handleSendMessage} />
+              <${ChatTab} messages=${currentMessages} users=${users} sessionId=${currentSessionId} onSend=${handleSendMessage} agentRunning=${agentRunning} onAgentRunningChange=${setAgentRunning} />
             `}
             ${centerTab === 'terminal' && html`
               <${TerminalTab} sessionId=${currentSessionId} terminalOutput=${terminalOutput} />
@@ -1701,6 +1876,7 @@ function App() {
         />
       </div>
       ${showNewSessionModal && html`<${NewSessionModal} onClose=${() => setShowNewSessionModal(false)} onSubmit=${handleCreateSession} />`}
+      <${Toast} toast=${toast} onClose=${() => setToast(null)} />
     </div>
   `;
 }
