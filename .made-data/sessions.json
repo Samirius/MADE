@@ -122,6 +122,28 @@
         "type": "chat",
         "content": "hello",
         "timestamp": 1778010392989
+      },
+      {
+        "id": "xvld9sve",
+        "sessionId": "8pt73gao",
+        "userId": "test",
+        "userName": "User",
+        "type": "image",
+        "content": "/api/sessions/8pt73gao/uploads/1778233825973-6k8f59.png",
+        "fileName": "test.png",
+        "fileSize": 45,
+        "timestamp": 1778233825979
+      },
+      {
+        "id": "pb7ucrb3",
+        "sessionId": "8pt73gao",
+        "userId": "test",
+        "userName": "User",
+        "type": "image",
+        "content": "/api/sessions/8pt73gao/uploads/1778233838478-9ec1ob.jpg",
+        "fileName": "test.jpg",
+        "fileSize": 54,
+        "timestamp": 1778233838479
       }
     ],
     "plan": null

@@ -4,6 +4,8 @@
 
 One workspace. Any agent. Any git host. Your entire team, live.
 
+**[API Reference](API.md)** | **[Security Policy](SECURITY.md)** | **[Changelog](CHANGELOG.md)**
+
 ---
 
 ## Why MADE?
