@@ -178,14 +178,13 @@ export function getWebUrl(workdir) {
 
 /**
  * Creates a Pull Request / Merge Request for the repo in `workdir`.
- *
- * @param {string} workdir   - Path to the git working directory
- * @param {string} title     - PR/MR title
- * @param {string} body      - PR/MR description body
+ * @param {string} workdir
+ * @param {string} title
+ * @param {string} body
  * @param {string} sourceBranch - The branch to merge from
- * @returns {{ ok: boolean, url?: string, message?: string, provider: string, method: string }}
+ * @returns {Promise<{ ok: boolean, url?: string, message?: string, provider: string, method: string }>}
  */
-export function createMergeRequest(workdir, title, body, sourceBranch) {
+export async function createMergeRequest(workdir, title, body, sourceBranch) {
   const info = detectProvider(workdir);
 
   switch (info.provider) {
@@ -217,37 +216,33 @@ function createGitHub(workdir, title, body, sourceBranch, info) {
     }
   }
 
-  // Fallback: try GitHub API with GITHUB_TOKEN
-  try {
-    return createGitHubAPI(workdir, title, body, sourceBranch, info);
-  } catch (e) {
-    return { ok: false, error: e.message, provider: "github", method: "api_fallback" };
-  }
+  // Fallback: try GitHub API with GITHUB_TOKEN (uses fetch — no token in /proc)
+  return createGitHubAPI(workdir, title, body, sourceBranch, info);
 }
 
-function createGitHubAPI(workdir, title, body, sourceBranch, info) {
+async function createGitHubAPI(workdir, title, body, sourceBranch, info) {
   const token = process.env.GITHUB_TOKEN;
-  if (!token) throw new Error("No gh CLI and no GITHUB_TOKEN set. Install gh or set the token.");
+  if (!token) return { ok: false, error: "No gh CLI and no GITHUB_TOKEN set. Install gh or set the token.", provider: "github", method: "api_fallback" };
 
   // Detect default branch
   let defaultBranch = "main";
   try {
-    const resp = run(
-      `curl -sf -H "Authorization: token ${token}" https://api.github.com/repos/${info.owner}/${info.repo}`,
-    );
-    defaultBranch = JSON.parse(resp).default_branch || "main";
+    const resp = await fetch(`https://api.github.com/repos/${info.owner}/${info.repo}`, {
+      headers: { "Authorization": `token ${token}`, "User-Agent": "MADE" },
+    });
+    defaultBranch = (await resp.json()).default_branch || "main";
   } catch { /* default to main */ }
 
-  const resp = run(
-    `curl -sf -X POST -H "Authorization: token ${token}" -H "Content-Type: application/json" ` +
-    `"https://api.github.com/repos/${info.owner}/${info.repo}/pulls" ` +
-    `-d ${JSON.stringify(JSON.stringify({ title, body, head: sourceBranch, base: defaultBranch }))}`,
-  );
-  const data = JSON.parse(resp);
+  const resp = await fetch(`https://api.github.com/repos/${info.owner}/${info.repo}/pulls`, {
+    method: "POST",
+    headers: { "Authorization": `token ${token}`, "Content-Type": "application/json", "User-Agent": "MADE" },
+    body: JSON.stringify({ title, body, head: sourceBranch, base: defaultBranch }),
+  });
+  const data = await resp.json();
   if (data.html_url) {
     return { ok: true, url: data.html_url, provider: "github", method: "api" };
   }
-  throw new Error(data.message || "GitHub API error");
+  return { ok: false, error: data.message || "GitHub API error", provider: "github", method: "api_fallback" };
 }
 
 // ─── GitLab ──────────────────────────────────────────────
@@ -267,17 +262,13 @@ function createGitLab(workdir, title, body, sourceBranch, info) {
     }
   }
 
-  // GitLab API fallback
-  try {
-    return createGitLabAPI(title, body, sourceBranch, info);
-  } catch (e) {
-    return { ok: false, error: e.message, provider: "gitlab", method: "api_fallback" };
-  }
+  // GitLab API fallback (uses fetch — no token in /proc)
+  return createGitLabAPI(title, body, sourceBranch, info);
 }
 
-function createGitLabAPI(title, body, sourceBranch, info) {
+async function createGitLabAPI(title, body, sourceBranch, info) {
   const token = process.env.GITLAB_TOKEN;
-  if (!token) throw new Error("No glab CLI and no GITLAB_TOKEN set.");
+  if (!token) return { ok: false, error: "No glab CLI and no GITLAB_TOKEN set.", provider: "gitlab", method: "api_fallback" };
 
   const projectPath = encodeURIComponent(`${info.owner}/${info.repo}`);
   const gitlabHost = `https://${info.host}`;
@@ -285,22 +276,22 @@ function createGitLabAPI(title, body, sourceBranch, info) {
   // Detect default branch
   let defaultBranch = "main";
   try {
-    const resp = run(
-      `curl -sf -H "PRIVATE-TOKEN: ${token}" "${gitlabHost}/api/v4/projects/${projectPath}"`,
-    );
-    defaultBranch = JSON.parse(resp).default_branch || "main";
+    const resp = await fetch(`${gitlabHost}/api/v4/projects/${projectPath}`, {
+      headers: { "PRIVATE-TOKEN": token },
+    });
+    defaultBranch = (await resp.json()).default_branch || "main";
   } catch { /* default to main */ }
 
-  const resp = run(
-    `curl -sf -X POST -H "PRIVATE-TOKEN: ${token}" -H "Content-Type: application/json" ` +
-    `"${gitlabHost}/api/v4/projects/${projectPath}/merge_requests" ` +
-    `-d ${JSON.stringify(JSON.stringify({ title, description: body, source_branch: sourceBranch, target_branch: defaultBranch }))}`,
-  );
-  const data = JSON.parse(resp);
+  const resp = await fetch(`${gitlabHost}/api/v4/projects/${projectPath}/merge_requests`, {
+    method: "POST",
+    headers: { "PRIVATE-TOKEN": token, "Content-Type": "application/json" },
+    body: JSON.stringify({ title, description: body, source_branch: sourceBranch, target_branch: defaultBranch }),
+  });
+  const data = await resp.json();
   if (data.web_url) {
     return { ok: true, url: data.web_url, provider: "gitlab", method: "api" };
   }
-  throw new Error(data.message || "GitLab API error");
+  return { ok: false, error: data.message || "GitLab API error", provider: "gitlab", method: "api_fallback" };
 }
 
 // ─── Gitea ───────────────────────────────────────────────
@@ -319,39 +310,35 @@ function createGitea(workdir, title, body, sourceBranch, info) {
     }
   }
 
-  // Gitea API fallback
-  try {
-    return createGiteaAPI(title, body, sourceBranch, info);
-  } catch (e) {
-    return { ok: false, error: e.message, provider: "gitea", method: "api_fallback" };
-  }
+  // Gitea API fallback (uses fetch — no token in /proc)
+  return createGiteaAPI(title, body, sourceBranch, info);
 }
 
-function createGiteaAPI(title, body, sourceBranch, info) {
+async function createGiteaAPI(title, body, sourceBranch, info) {
   const token = process.env.GITEA_TOKEN;
-  if (!token) throw new Error("No tea CLI and no GITEA_TOKEN set.");
+  if (!token) return { ok: false, error: "No tea CLI and no GITEA_TOKEN set.", provider: "gitea", method: "api_fallback" };
 
   const giteaHost = `https://${info.host}`;
 
   // Detect default branch
   let defaultBranch = "main";
   try {
-    const resp = run(
-      `curl -sf -H "Authorization: token ${token}" "${giteaHost}/api/v1/repos/${info.owner}/${info.repo}"`,
-    );
-    defaultBranch = JSON.parse(resp).default_branch || "main";
+    const resp = await fetch(`${giteaHost}/api/v1/repos/${info.owner}/${info.repo}`, {
+      headers: { "Authorization": `token ${token}` },
+    });
+    defaultBranch = (await resp.json()).default_branch || "main";
   } catch { /* default to main */ }
 
-  const resp = run(
-    `curl -sf -X POST -H "Authorization: token ${token}" -H "Content-Type: application/json" ` +
-    `"${giteaHost}/api/v1/repos/${info.owner}/${info.repo}/pulls" ` +
-    `-d ${JSON.stringify(JSON.stringify({ title, body, head: sourceBranch, base: defaultBranch }))}`,
-  );
-  const data = JSON.parse(resp);
+  const resp = await fetch(`${giteaHost}/api/v1/repos/${info.owner}/${info.repo}/pulls`, {
+    method: "POST",
+    headers: { "Authorization": `token ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ title, body, head: sourceBranch, base: defaultBranch }),
+  });
+  const data = await resp.json();
   if (data.html_url) {
     return { ok: true, url: data.html_url, provider: "gitea", method: "api" };
   }
-  throw new Error(data.message || "Gitea API error");
+  return { ok: false, error: data.message || "Gitea API error", provider: "gitea", method: "api_fallback" };
 }
 
 // ─── Bitbucket ───────────────────────────────────────────
@@ -370,48 +357,43 @@ function createBitbucket(workdir, title, body, sourceBranch, info) {
     }
   }
 
-  // Bitbucket API fallback
-  try {
-    return createBitbucketAPI(title, body, sourceBranch, info);
-  } catch (e) {
-    return { ok: false, error: e.message, provider: "bitbucket", method: "api_fallback" };
-  }
+  // Bitbucket API fallback (uses fetch — no token in /proc)
+  return createBitbucketAPI(title, body, sourceBranch, info);
 }
 
-function createBitbucketAPI(title, body, sourceBranch, info) {
+async function createBitbucketAPI(title, body, sourceBranch, info) {
   const token = process.env.BITBUCKET_TOKEN;
   const user = process.env.BITBUCKET_USER;
-  if (!token || !user) throw new Error("No bb CLI and no BITBUCKET_TOKEN/BITBUCKET_USER set.");
+  if (!token || !user) return { ok: false, error: "No bb CLI and no BITBUCKET_TOKEN/BITBUCKET_USER set.", provider: "bitbucket", method: "api_fallback" };
 
   const apiUrl = `https://api.bitbucket.org/2.0/repositories/${info.owner}/${info.repo}/pullrequests`;
-
   const authHeader = `Basic ${Buffer.from(`${user}:${token}`).toString("base64")}`;
 
   // Detect default branch
   let defaultBranch = "main";
   try {
-    const resp = run(
-      `curl -sf -H "Authorization: ${authHeader}" "${apiUrl.replace("/pullrequests", "")}"`,
-    );
-    const data = JSON.parse(resp);
+    const resp = await fetch(apiUrl.replace("/pullrequests", ""), {
+      headers: { "Authorization": authHeader },
+    });
+    const data = await resp.json();
     defaultBranch = data.mainbranch?.name || "main";
   } catch { /* default to main */ }
 
-  const resp = run(
-    `curl -sf -X POST -H "Authorization: ${authHeader}" -H "Content-Type: application/json" ` +
-    `"${apiUrl}" ` +
-    `-d ${JSON.stringify(JSON.stringify({
+  const resp = await fetch(apiUrl, {
+    method: "POST",
+    headers: { "Authorization": authHeader, "Content-Type": "application/json" },
+    body: JSON.stringify({
       title,
       description: body,
       source: { branch: { name: sourceBranch } },
       destination: { branch: { name: defaultBranch } },
-    }))}`,
-  );
-  const data = JSON.parse(resp);
+    }),
+  });
+  const data = await resp.json();
   if (data.links?.html?.href) {
     return { ok: true, url: data.links.html.href, provider: "bitbucket", method: "api" };
   }
-  throw new Error(data.error?.message || "Bitbucket API error");
+  return { ok: false, error: data.error?.message || "Bitbucket API error", provider: "bitbucket", method: "api_fallback" };
 }
 
 // ─── Generic / Local ─────────────────────────────────────

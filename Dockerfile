@@ -1,8 +1,13 @@
 FROM node:22-slim
 
-# Install git for git operations
+# Install git + native build tools for node-pty compilation
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git && \
+    apt-get install -y --no-install-recommends \
+      git \
+      build-essential \
+      python3 \
+      make \
+      g++ && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
