@@ -76,6 +76,7 @@ export const WSEventType = {
   SessionJoin:   'session:join',
   SessionLeave:  'session:leave',
   SessionList:   'session:list',
+  TerminalCreate: 'terminal:create',
   TerminalOutput:'terminal:output',
   TerminalInput: 'terminal:input',
   TerminalResize:'terminal:resize',

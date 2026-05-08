@@ -240,11 +240,23 @@ export class WSHandler {
       }
 
       // ---- Terminal ----
+      case WSEventType.TerminalCreate: {
+        const { sessionId } = msg.payload as { sessionId: string };
+        if (!terminalManager.has(sessionId)) {
+          terminalManager.create(sessionId).catch(() => {});
+        }
+        break;
+      }
+
       case WSEventType.TerminalInput: {
         const { sessionId, data } = msg.payload as {
           sessionId: string;
           data: string;
         };
+        // Auto-create terminal if it doesn't exist yet
+        if (!terminalManager.has(sessionId)) {
+          terminalManager.create(sessionId).catch(() => {});
+        }
         terminalManager.write(sessionId, data);
         break;
       }

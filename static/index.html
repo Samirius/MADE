@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MADE — Multiplayer Agent Development Environment</title>
-<script crossorigin src="https://esm.sh/react@18.3.1"></script>
-<script crossorigin src="https://esm.sh/react-dom@18.3.1/client"></script>
-<script crossorigin src="https://esm.sh/htm@3.1.1"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/htm@3/dist/htm.js"></script>
 <style>
 /* ============================================================
    MADE – Global Styles
@@ -370,17 +370,15 @@ input, textarea { font-family: var(--font); outline: none; border: none; backgro
 </head>
 <body>
 <div id="root"></div>
-<script type="module">
+<script>
 // ============================================================
-// MADE – Frontend (React 18 + htm)
+// MADE – Frontend (React 18 + htm via UMD)
 // ============================================================
 
-const React = window.React;
-const ReactDOMClient = window.ReactDOMClient;
-const htm = window.htm;
+// htm is loaded as UMD below, returns a tagged template function
+const html = htm.bind(React.createElement);
 
 const { useState, useEffect, useRef, useCallback, useMemo, Fragment, createContext, useContext } = React;
-const html = htm.bind(React.createElement);
 
 // ============================================================
 // Constants
@@ -393,6 +391,7 @@ const WS_EVENTS = {
   SessionJoin:   'session:join',
   SessionLeave:  'session:leave',
   SessionList:   'session:list',
+  TerminalCreate: 'terminal:create',
   TerminalOutput:'terminal:output',
   TerminalInput: 'terminal:input',
   TerminalResize:'terminal:resize',
@@ -759,6 +758,14 @@ function ChatTab({ messages, users, sessionId, onSend }) {
   const handleSend = useCallback(() => {
     const text = input.trim();
     if (!text || !sessionId) return;
+    // If agent mode is on, send agent:start to spawn an agent
+    if (agentMode) {
+      ws.send(WS_EVENTS.AgentStart, {
+        sessionId,
+        config: { cmd: 'claude' },
+      }, sessionId);
+    }
+    // Always send the chat message so the user's prompt appears in chat
     onSend(text, agentMode ? 'plan' : 'text');
     setInput('');
     setShowAutocomplete(false);
@@ -892,9 +899,15 @@ function ChatTab({ messages, users, sessionId, onSend }) {
 // Components: Terminal Tab
 // ============================================================
 function TerminalTab({ sessionId, terminalOutput }) {
-  const [inputBuf, setInputBuf] = useState('');
   const termRef = useRef(null);
   const hiddenInputRef = useRef(null);
+
+  // Send terminal:create when mounted to ensure PTY exists on backend
+  useEffect(() => {
+    if (sessionId) {
+      ws.send(WS_EVENTS.TerminalCreate, { sessionId }, sessionId);
+    }
+  }, [sessionId]);
 
   useEffect(() => {
     if (termRef.current) {
@@ -907,23 +920,35 @@ function TerminalTab({ sessionId, terminalOutput }) {
   }, []);
 
   const handleKeyDown = useCallback((e) => {
+    e.preventDefault();
     if (e.key === 'Enter') {
-      const data = inputBuf + '\n';
-      ws.send(WS_EVENTS.TerminalInput, { sessionId, data }, sessionId);
-      setInputBuf('');
+      ws.send(WS_EVENTS.TerminalInput, { sessionId, data: '\r' }, sessionId);
     } else if (e.key === 'Backspace') {
-      setInputBuf(prev => prev.slice(0, -1));
+      ws.send(WS_EVENTS.TerminalInput, { sessionId, data: '\x7f' }, sessionId);
     } else if (e.key === 'Tab') {
-      e.preventDefault();
+      ws.send(WS_EVENTS.TerminalInput, { sessionId, data: '\t' }, sessionId);
+    } else if (e.key === 'ArrowUp') {
+      ws.send(WS_EVENTS.TerminalInput, { sessionId, data: '\x1b[A' }, sessionId);
+    } else if (e.key === 'ArrowDown') {
+      ws.send(WS_EVENTS.TerminalInput, { sessionId, data: '\x1b[B' }, sessionId);
+    } else if (e.key === 'ArrowRight') {
+      ws.send(WS_EVENTS.TerminalInput, { sessionId, data: '\x1b[C' }, sessionId);
+    } else if (e.key === 'ArrowLeft') {
+      ws.send(WS_EVENTS.TerminalInput, { sessionId, data: '\x1b[D' }, sessionId);
+    } else if (e.key === 'Escape') {
+      ws.send(WS_EVENTS.TerminalInput, { sessionId, data: '\x1b' }, sessionId);
+    } else if (e.key === 'Home') {
+      ws.send(WS_EVENTS.TerminalInput, { sessionId, data: '\x1b[H' }, sessionId);
+    } else if (e.key === 'End') {
+      ws.send(WS_EVENTS.TerminalInput, { sessionId, data: '\x1b[F' }, sessionId);
+    } else if (e.key === 'Delete') {
+      ws.send(WS_EVENTS.TerminalInput, { sessionId, data: '\x1b[3~' }, sessionId);
+    } else if (e.ctrlKey && e.key.length === 1) {
+      ws.send(WS_EVENTS.TerminalInput, { sessionId, data: String.fromCharCode(e.key.charCodeAt(0) - 96) }, sessionId);
     } else if (e.key.length === 1) {
-      const data = e.key;
-      ws.send(WS_EVENTS.TerminalInput, { sessionId, data }, sessionId);
-      setInputBuf(prev => prev + data);
-    } else if (e.ctrlKey) {
-      const data = String.fromCharCode(e.keyCode - 64);
-      ws.send(WS_EVENTS.TerminalInput, { sessionId, data }, sessionId);
+      ws.send(WS_EVENTS.TerminalInput, { sessionId, data: e.key }, sessionId);
     }
-  }, [sessionId, inputBuf]);
+  }, [sessionId]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -945,9 +970,7 @@ function TerminalTab({ sessionId, terminalOutput }) {
       <input
         ref=${hiddenInputRef}
         class="terminal-input-hidden"
-        value=${inputBuf}
         onKeyDown=${handleKeyDown}
-        onChange=${() => {}}
         autoFocus
       />
       <div dangerouslySetInnerHTML=${{ __html: escapeHtml(terminalOutput || '$ ') }} />
@@ -1468,6 +1491,21 @@ function App() {
   useWS(WS_EVENTS.UserJoin, useCallback((msg) => {
     if (msg.payload?.userId) {
       setUserId(msg.payload.userId);
+      // Add the user to the users list if not already present
+      setUsers(prev => {
+        if (prev.find(u => u.id === msg.payload.userId)) return prev;
+        return [...prev, {
+          id: msg.payload.userId,
+          name: msg.payload.name || msg.payload.userId,
+          isAgent: msg.payload.isAgent || false,
+        }];
+      });
+    }
+  }, []));
+
+  useWS(WS_EVENTS.UserLeave, useCallback((msg) => {
+    if (msg.payload?.userId) {
+      setUsers(prev => prev.filter(u => u.id !== msg.payload.userId));
     }
   }, []));
 
@@ -1523,20 +1561,56 @@ function App() {
   }, []));
 
   useWS(WS_EVENTS.AgentOutput, useCallback((msg) => {
-    // Treat agent output as chat message if in session
+    // Buffer agent output and flush as a single chat message after 500ms of silence
     if (msg.payload?.data && msg.sessionId) {
-      const agentMsg = {
-        id: 'agent-' + Date.now(),
-        sessionId: msg.sessionId,
-        userId: 'agent',
-        content: msg.payload.data,
-        type: 'text',
-        timestamp: Date.now(),
-      };
-      setMessages(prev => ({
-        ...prev,
-        [msg.sessionId]: [...(prev[msg.sessionId] || []), agentMsg],
-      }));
+      const data = msg.payload.data;
+      if (!window._agentBuffer) window._agentBuffer = {};
+      if (!window._agentBuffer[msg.sessionId]) window._agentBuffer[msg.sessionId] = '';
+      window._agentBuffer[msg.sessionId] += data;
+
+      if (window._agentFlushTimer) clearTimeout(window._agentFlushTimer);
+      window._agentFlushTimer = setTimeout(() => {
+        const sid = msg.sessionId;
+        const accumulated = window._agentBuffer?.[sid] || '';
+        if (accumulated) {
+          const agentMsg = {
+            id: 'agent-' + Date.now(),
+            sessionId: sid,
+            userId: 'agent',
+            content: accumulated,
+            type: 'text',
+            timestamp: Date.now(),
+          };
+          setMessages(prev => ({
+            ...prev,
+            [sid]: [...(prev[sid] || []), agentMsg],
+          }));
+          if (window._agentBuffer) window._agentBuffer[sid] = '';
+        }
+      }, 500);
+    }
+  }, []));
+
+  useWS(WS_EVENTS.AgentStop, useCallback((msg) => {
+    // Flush any remaining buffered agent output immediately
+    if (msg.sessionId && window._agentBuffer?.[msg.sessionId]) {
+      const sid = msg.sessionId;
+      const accumulated = window._agentBuffer[sid];
+      if (accumulated) {
+        const agentMsg = {
+          id: 'agent-' + Date.now(),
+          sessionId: sid,
+          userId: 'agent',
+          content: accumulated,
+          type: 'text',
+          timestamp: Date.now(),
+        };
+        setMessages(prev => ({
+          ...prev,
+          [sid]: [...(prev[sid] || []), agentMsg],
+        }));
+        window._agentBuffer[sid] = '';
+      }
     }
   }, []));
 
@@ -1634,7 +1708,7 @@ function App() {
 // ============================================================
 // Mount
 // ============================================================
-const root = ReactDOMClient.createRoot(document.getElementById('root'));
+const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(html`<${App} />`);
 
 </script>
