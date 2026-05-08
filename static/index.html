@@ -56,6 +56,30 @@ async function api(path, opts = {}) {
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
+// Feature 4: Track agent start time for duration display
+let _agentStartTime = null;
+
+// Feature 4: Append agent system message (start/done) to chat
+function appendAgentSystemMessage(text, timestamp) {
+  const chat = document.getElementById('chat-area');
+  if (!chat) return;
+  const time = timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const div = document.createElement('div');
+  div.className = 'message';
+  div.innerHTML = `
+    <div class="msg-avatar">⚡</div>
+    <div class="msg-body">
+      <div class="msg-header">
+        <span class="msg-name" style="color:var(--text-dim)">System</span>
+        <span class="msg-time">${time}</span>
+      </div>
+      <div class="agent-system-msg">${escHtml(text)}</div>
+    </div>
+  `;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
 // ─── WebSocket ───────────────────────────────────────────
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -71,6 +95,37 @@ function connectWS() {
         if (splitOpen) setTimeout(() => refreshInlinePreview(), 1000);
         // Feature B: fetch and render diff card after agent finishes
         setTimeout(() => fetchAndRenderDiffCard(msg.message.sessionId), 2000);
+        // Feature 2: hide progress bar
+        hideAgentProgress();
+      }
+      // Feature 2: show/update agent progress bar
+      if (msg.message.type === 'agent_start' && state.activeSession === msg.message.sessionId) {
+        showAgentProgress();
+        // Feature 4: Show agent model and system message
+        _agentStartTime = Date.now();
+        const model = msg.message.model || msg.message.adapter || 'agent';
+        const modelDisplay = document.getElementById('agent-model-display');
+        const modelName = document.getElementById('agent-model-name');
+        if (modelDisplay && modelName) {
+          modelName.textContent = model;
+          modelDisplay.style.display = 'inline-flex';
+        }
+        // Add system message to chat
+        appendAgentSystemMessage('🤖 Agent started (' + model + ')', msg.message.timestamp);
+      }
+      if (msg.message.type === 'agent_stream' && state.activeSession === msg.message.sessionId) {
+        updateAgentProgress(msg.message.content);
+      }
+      // Feature 4: Agent done with duration
+      if (msg.message.type === 'agent_done' && state.activeSession === msg.message.sessionId && _agentStartTime) {
+        const duration = Math.round((Date.now() - _agentStartTime) / 1000);
+        appendAgentSystemMessage('✅ Agent finished (' + duration + 's)', msg.message.timestamp);
+        _agentStartTime = null;
+        // Hide model display after a delay
+        setTimeout(() => {
+          const modelDisplay = document.getElementById('agent-model-display');
+          if (modelDisplay) modelDisplay.style.display = 'none';
+        }, 5000);
       }
     }
     if (msg.type === 'message_edited') {
@@ -177,9 +232,24 @@ function renderSessionList() {
 }
 
 function sessionItemHtml(s) {
+  // Feature 4: Rich status badges
+  let badgeClass, badgeText;
+  if (s.agentRunning) {
+    badgeClass = 'working';
+    badgeText = 'Working...';
+  } else if (s.agentError) {
+    badgeClass = 'error';
+    badgeText = 'Error';
+  } else if (s.agentWaiting) {
+    badgeClass = 'waiting';
+    badgeText = 'Waiting';
+  } else {
+    badgeClass = 'idle';
+    badgeText = 'Idle';
+  }
   return `<div class="session-item ${state.activeSession === s.id ? 'active' : ''}" onclick="openSession('${s.id}')">
-      <div class="dot ${s.agentRunning ? 'running' : 'idle'}"></div>
-      <span>${s.name}</span>
+      <span class="badge ${badgeClass}">${badgeText}</span>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(s.name)}</span>
       <span class="count">${s.messageCount || 0}</span>
     </div>`;
 }
@@ -205,6 +275,7 @@ async function openSession(id) {
         # ${s.name}
         <span class="branch">${s.branch}</span>
         ${s.agentRunning ? '<span style="color:var(--green);font-size:12px">● Agent running</span>' : ''}
+        <span class="agent-model-display" id="agent-model-display" style="display:none">🤖 <span id="agent-model-name"></span></span>
       </h2>
       <div class="header-actions">
         <button class="btn ${getActiveTab()==='chat'?'active':''}" onclick="switchTab('chat')">💬 Chat</button>
@@ -220,6 +291,12 @@ async function openSession(id) {
       <span style="color:var(--text-dim)">Summary:</span>
       <span id="summary-text" style="color:var(--text)">${s.summary ? escHtml(s.summary) : 'No activity yet'}</span>
       <span style="color:var(--text-dim);margin-left:auto">${s.messageCount || 0} messages · ${s.participantCount || 0} people</span>
+    </div>
+    <div class="agent-progress-bar" id="agent-progress-bar" style="display:none">
+      <div class="agent-progress-shimmer"></div>
+      <span class="agent-progress-spinner"></span>
+      <span class="agent-progress-text">Agent working...</span>
+      <button class="agent-progress-stop" onclick="stopAgent()" title="Stop agent">■ Stop</button>
     </div>
     <div id="session-content" style="flex:1;display:flex;min-height:0">
     <div id="split-container" class="split-container">
@@ -252,14 +329,21 @@ async function openSession(id) {
       </div>
       <div id="split-handle" class="split-handle"></div>
       <div id="split-right" class="split-right">
-        <div class="split-preview-bar">
+        <div class="split-preview-bar" id="split-preview-bar-live">
           <span style="color:var(--text-dim);font-size:12px;white-space:nowrap">👁 Live</span>
           <input class="preview-url" id="preview-url-inline" value="/index.html"
             onkeydown="if(event.key==='Enter'){event.preventDefault();refreshInlinePreview();}">
           <button onclick="refreshInlinePreview()" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px" title="Refresh">🔄</button>
           <button onclick="toggleSplit()" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px" title="Close preview">✕</button>
         </div>
+        <div class="split-preview-bar" id="split-preview-bar-code" style="display:none">
+          <span style="color:var(--text-dim);font-size:12px;white-space:nowrap">📄 Source</span>
+          <input class="preview-url" id="preview-url-code" value="" readonly style="flex:1">
+          <button onclick="showLivePreview()" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px" title="Back to live">👁</button>
+          <button onclick="toggleSplit()" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px" title="Close">✕</button>
+        </div>
         <iframe id="preview-frame-inline" class="split-preview-frame"></iframe>
+        <div id="preview-code-container" class="preview-code-container" style="display:none;flex:1;overflow:auto;background:#1a1b26"></div>
       </div>
     </div>
     </div>
@@ -298,7 +382,9 @@ function appendMessage(m, scroll = true) {
   let renderedContent;
   if (m.type === 'image') {
     renderedContent = ''; // built separately below
-  } else if (m.type === 'agent_stream' || m.type === 'agent_done' || m.type === 'terminal' || m.type === 'agent_start') {
+  } else if (m.type === 'terminal') {
+    renderedContent = ''; // Feature 3: built as cmd-card below
+  } else if (m.type === 'agent_stream' || m.type === 'agent_done' || m.type === 'agent_start') {
     renderedContent = renderRichContent(m.content || '');
   } else {
     renderedContent = escHtml(m.content);
@@ -342,6 +428,97 @@ function appendMessage(m, scroll = true) {
     info.appendChild(nameSpan);
     info.appendChild(sizeSpan);
     contentEl.appendChild(info);
+  }
+  // Feature 3: Build cmd-card for terminal messages
+  if (m.type === 'terminal') {
+    const contentEl = div.querySelector('.msg-content');
+    contentEl.className = ''; // clear terminal class
+    contentEl.textContent = '';
+
+    const rawContent = m.content || '';
+    const contentLines = rawContent.split('\n');
+    const exitCode = m.exitCode !== undefined ? m.exitCode : null;
+
+    // Extract command: first line if it looks like a command, otherwise truncate
+    let cmdText = contentLines[0] || '';
+    if (cmdText.length > 80) cmdText = cmdText.substring(0, 77) + '...';
+
+    // Determine if we should auto-collapse (>10 lines)
+    const shouldCollapse = contentLines.length > 10;
+
+    const cardId = 'cmd-card-' + m.id;
+
+    const card = document.createElement('div');
+    card.className = 'cmd-card' + (shouldCollapse ? ' collapsed' : '');
+    card.id = cardId;
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'cmd-card-header';
+
+    const cmdSpan = document.createElement('span');
+    cmdSpan.className = 'cmd-card-cmd';
+    cmdSpan.textContent = '$ ' + cmdText;
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'cmd-card-copy';
+    copyBtn.textContent = '📋';
+    copyBtn.title = 'Copy output';
+    copyBtn.onclick = function(e) {
+      e.stopPropagation();
+      navigator.clipboard.writeText(rawContent).catch(() => {});
+    };
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'cmd-card-toggle';
+    toggleBtn.textContent = shouldCollapse ? '▸' : '▾';
+    toggleBtn.title = 'Toggle collapse';
+    toggleBtn.onclick = function(e) {
+      e.stopPropagation();
+      card.classList.toggle('collapsed');
+      this.textContent = card.classList.contains('collapsed') ? '▸' : '▾';
+    };
+
+    header.appendChild(cmdSpan);
+    header.appendChild(copyBtn);
+    header.appendChild(toggleBtn);
+    card.appendChild(header);
+
+    // Body
+    const body = document.createElement('div');
+    body.className = 'cmd-card-body';
+    body.textContent = rawContent;
+    card.appendChild(body);
+
+    // Footer with expand button and exit badge
+    const footer = document.createElement('div');
+    footer.className = 'cmd-card-footer';
+
+    if (shouldCollapse) {
+      const expandBtn = document.createElement('button');
+      expandBtn.className = 'cmd-card-expand';
+      expandBtn.textContent = 'Show more (' + contentLines.length + ' lines)';
+      expandBtn.onclick = function(e) {
+        e.stopPropagation();
+        card.classList.remove('collapsed');
+        toggleBtn.textContent = '▾';
+        this.style.display = 'none';
+      };
+      footer.appendChild(expandBtn);
+    }
+
+    if (exitCode !== null) {
+      const badge = document.createElement('span');
+      badge.className = 'exit-badge ' + (exitCode === 0 ? 'success' : 'error');
+      badge.textContent = (exitCode === 0 ? '✓ 0' : '✗ ' + exitCode);
+      footer.appendChild(badge);
+    }
+
+    if (footer.children.length > 0) {
+      card.appendChild(footer);
+    }
+
+    contentEl.appendChild(card);
   }
   // Show edit/delete on hover
   if (isOwn) {
@@ -487,6 +664,19 @@ function renderCodeBlocks(content) {
 function renderInlineContent(content) {
   // Process line by line for diff detection within mixed content
   let html = escHtml(content);
+  // File path patterns: path/to/file.ext:line or src/foo.mjs etc.
+  html = html.replace(/(?:^|[\s(])([\w./-]+\.[\w]+)(?::(\d+))?(?=[\s),.]|$)/gm, function(match, path, line) {
+    // Skip URLs
+    if (path.match(/^(https?|ftp|mailto):/i)) return match;
+    // Only match plausible file paths (must contain / or known extension)
+    const exts = /\.(js|jsx|ts|tsx|mjs|cjs|py|html|css|json|md|yaml|yml|toml|sh|bash|zsh|rs|go|rb|java|c|cpp|h|hpp|vue|svelte|sql|txt|cfg|conf|ini|env|gitignore|dockerfile|makefile|lock|svg|xml|graphql|gql|prisma|wasm|bat|ps1|php|swift|kt|dart|lua|r|pl|ex|exs|hs|elm|clj|scala|cl$/i;
+    if (!path.includes('/') && !exts.test(path)) return match;
+    // Skip common non-file words
+    const skip = ['the','and','for','not','you','are','can','has','was','will','but','this','that','with','from','they','been','have','were','said','each','which','their','would','there','could','other','than','into','more','about','up','out','many','then','them','these','some','her','would','make','like','time','very','when','come','could','no','just','know','take','people','year','your','good','some','also','look','only','come','think','back','after','work','first','well'];
+    if (skip.includes(path.toLowerCase())) return match;
+    const lineArg = line ? ':' + line : '';
+    return match.replace(path + (line ? ':' + line : ''), '<a href="javascript:void(0)" onclick="openFilePreview(\'' + path + '\')" class="file-path-link" title="Click to preview">' + path + lineArg + '</a>');
+  });
   // URLs → clickable links
   html = html.replace(/(https?:\/\/[^\s<>"')\]]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
   // @mentions → highlighted
@@ -1661,8 +1851,13 @@ async function fetchAndRenderDiffCard(sessionId) {
       line.className = 'diff-file-line';
 
       const nameSpan = document.createElement('span');
-      nameSpan.className = 'diff-file-name';
+      nameSpan.className = 'diff-file-name clickable-file';
       nameSpan.textContent = '📄 ' + f.name;
+      nameSpan.title = 'Click to preview file';
+      nameSpan.onclick = function(e) {
+        e.stopPropagation();
+        openFilePreview(f.name);
+      };
 
       const addS = document.createElement('span');
       addS.className = 'diff-file-add';
@@ -1756,6 +1951,145 @@ function parseGitDiff(diffText) {
     files.push({ name: currentFile, adds: currentAdds, dels: currentDels });
   }
   return { files, totalAdd, totalDel };
+}
+
+// ─── Feature 1: File Preview in Split Panel ──────────────
+async function openFilePreview(path) {
+  if (!state.activeSession) return;
+  // Ensure split is open
+  if (!splitOpen) toggleSplit();
+  
+  try {
+    const response = await fetch(`${API}/api/sessions/${state.activeSession}/files?path=/${path.replace(/^\//, '')}`);
+    const content = await response.text();
+    
+    // Switch to code mode
+    const liveBar = document.getElementById('split-preview-bar-live');
+    const codeBar = document.getElementById('split-preview-bar-code');
+    const iframe = document.getElementById('preview-frame-inline');
+    const codeContainer = document.getElementById('preview-code-container');
+    const urlInput = document.getElementById('preview-url-code');
+    
+    if (liveBar) liveBar.style.display = 'none';
+    if (codeBar) codeBar.style.display = 'flex';
+    if (iframe) iframe.style.display = 'none';
+    if (codeContainer) codeContainer.style.display = 'block';
+    if (urlInput) urlInput.value = path;
+    
+    // Detect language from extension
+    const ext = path.split('.').pop().toLowerCase();
+    const langMap = {
+      js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
+      ts: 'typescript', tsx: 'typescript',
+      py: 'python', rb: 'ruby', rs: 'rust', go: 'go', java: 'java',
+      html: 'html', css: 'css', json: 'json', yaml: 'yaml', yml: 'yaml',
+      md: 'markdown', sql: 'sql', sh: 'bash', bash: 'bash', zsh: 'bash',
+      c: 'c', cpp: 'cpp', h: 'c', hpp: 'cpp',
+      vue: 'html', svelte: 'html', xml: 'xml', svg: 'xml',
+      toml: 'toml', conf: 'conf', cfg: 'conf', ini: 'ini',
+      txt: 'text', env: 'env', lock: 'json',
+    };
+    const lang = langMap[ext] || 'text';
+    
+    // Build highlighted code with line numbers
+    const lines = content.split('\n');
+    let codeHtml = '<div class="code-preview-lang">' + escHtml(lang) + '</div>';
+    codeHtml += '<table class="code-preview-table"><tbody>';
+    for (let i = 0; i < lines.length; i++) {
+      const lineNum = i + 1;
+      const highlighted = highlightSyntax(escHtml(lines[i]), lang);
+      codeHtml += `<tr class="code-preview-line"><td class="code-preview-linenum">${lineNum}</td><td class="code-preview-code">${highlighted}</td></tr>`;
+    }
+    codeHtml += '</tbody></table>';
+    
+    if (codeContainer) {
+      codeContainer.innerHTML = codeHtml;
+    }
+  } catch (err) {
+    console.error('Failed to open file preview:', err);
+  }
+}
+
+function highlightSyntax(line, lang) {
+  // Comments
+  if (lang === 'python' || lang === 'bash' || lang === 'toml') {
+    line = line.replace(/(#[^\n]*)/g, '<span class="hl-comment">$1</span>');
+  } else if (lang === 'html' || lang === 'xml' || lang === 'markdown') {
+    line = line.replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="hl-comment">$1</span>');
+  } else {
+    line = line.replace(/(\/\/[^\n]*)/g, '<span class="hl-comment">$1</span>');
+    line = line.replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="hl-comment">$1</span>');
+  }
+  // Strings
+  line = line.replace(/(&quot;[^&]*?&quot;|&#39;[^&]*?&#39;|`[^`]*?`)/g, '<span class="hl-string">$1</span>');
+  // Numbers
+  line = line.replace(/\b(\d+\.?\d*)\b/g, '<span class="hl-number">$1</span>');
+  // Keywords (JS/TS/Java/C/C++)
+  const jsKeywords = /\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|new|class|extends|import|export|default|from|async|await|try|catch|finally|throw|typeof|instanceof|in|of|null|undefined|true|false|this|super|yield|static|get|set|void|delete)\b/g;
+  const pyKeywords = /\b(def|class|return|if|elif|else|for|while|break|continue|import|from|as|try|except|finally|raise|with|lambda|yield|pass|assert|del|in|not|and|or|is|None|True|False|self|global|nonlocal|async|await)\b/g;
+  const cssKeywords = /\b(display|flex|grid|position|margin|padding|border|color|background|font|width|height|top|left|right|bottom|z-index|overflow|transition|animation|transform|opacity|box-shadow|border-radius|none|auto|inherit|initial|important|relative|absolute|fixed|sticky|block|inline|center|space-between|column|row|wrap|hidden|visible|pointer|solid|dashed|none)\b/g;
+  
+  if (['javascript','typescript'].includes(lang)) {
+    line = line.replace(jsKeywords, '<span class="hl-keyword">$1</span>');
+  } else if (lang === 'python') {
+    line = line.replace(pyKeywords, '<span class="hl-keyword">$1</span>');
+  } else if (lang === 'css') {
+    line = line.replace(cssKeywords, '<span class="hl-keyword">$1</span>');
+  } else if (lang === 'html' || lang === 'xml') {
+    line = line.replace(/\b(\w+)=/g, '<span class="hl-keyword">$1</span>=');
+    line = line.replace(/(&lt;\/?)([\w-]+)/g, '$1<span class="hl-keyword">$2</span>');
+  }
+  return line;
+}
+
+function showLivePreview() {
+  const liveBar = document.getElementById('split-preview-bar-live');
+  const codeBar = document.getElementById('split-preview-bar-code');
+  const iframe = document.getElementById('preview-frame-inline');
+  const codeContainer = document.getElementById('preview-code-container');
+  
+  if (liveBar) liveBar.style.display = 'flex';
+  if (codeBar) codeBar.style.display = 'none';
+  if (iframe) iframe.style.display = 'block';
+  if (codeContainer) codeContainer.style.display = 'none';
+  
+  refreshInlinePreview();
+}
+
+// ─── Feature 2: Agent Progress Bar ───────────────────────
+function showAgentProgress() {
+  const bar = document.getElementById('agent-progress-bar');
+  if (bar) {
+    bar.style.display = 'flex';
+    bar.classList.add('visible');
+  }
+}
+
+function updateAgentProgress(text) {
+  const el = document.querySelector('.agent-progress-text');
+  if (el && text) {
+    // Show a truncated preview of the latest stream content
+    const snippet = text.length > 60 ? text.substring(0, 60) + '...' : text;
+    el.textContent = snippet || 'Agent working...';
+  }
+}
+
+function hideAgentProgress() {
+  const bar = document.getElementById('agent-progress-bar');
+  if (bar) {
+    bar.classList.remove('visible');
+    setTimeout(() => { bar.style.display = 'none'; }, 1000);
+  }
+}
+
+async function stopAgent() {
+  if (!state.activeSession) return;
+  try {
+    await api(`/api/sessions/${state.activeSession}/exec/abort`, { method: 'POST' });
+    hideAgentProgress();
+  } catch (err) {
+    console.error('Failed to stop agent:', err);
+  }
 }
 
 // ─── Init ────────────────────────────────────────────────
