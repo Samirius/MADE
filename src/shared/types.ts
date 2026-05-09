@@ -93,6 +93,7 @@ export const WSEventType = {
   AgentOutput:   'agent:output',
   AgentStop:     'agent:stop',
   AgentStatus:   'agent:status',
+  AgentList:     'agent:list',
   PlanCreate:    'plan:create',
   PlanUpdate:    'plan:update',
   DiffShow:      'diff:show',
@@ -100,6 +101,10 @@ export const WSEventType = {
   UserJoin:      'user:join',
   UserLeave:     'user:leave',
   Activity:      'activity',
+  VoiceJoin:     'voice:join',
+  VoiceLeave:    'voice:leave',
+  VoiceSignal:   'voice:signal',
+  VoiceUsers:    'voice:users',
 } as const;
 
 export type WSEventTypeValue = (typeof WSEventType)[keyof typeof WSEventType];

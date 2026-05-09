@@ -13,6 +13,7 @@ import type { AgentManager } from '../services/AgentManager.js';
 import type { TerminalManager } from '../services/TerminalManager.js';
 import type { FileManager } from '../services/FileManager.js';
 import type { GitManager } from '../services/GitManager.js';
+import type { ContainerManager } from '../services/ContainerManager.js';
 
 /** Bundle of all backend services passed to the handler. */
 export interface Services {
@@ -21,6 +22,8 @@ export interface Services {
   terminalManager: TerminalManager;
   fileManager: FileManager;
   gitManager: GitManager;
+  containerManager: ContainerManager;
+  dockerEnabled: () => boolean;
   authToken?: string;
 }
 
@@ -40,10 +43,10 @@ export class WSHandler {
     // Forward agent output to the relevant session clients
     this.services.agentManager.on(
       'output',
-      (sessionId: string, data: string) => {
+      (sessionId: string, agentId: string, data: string) => {
         this.broadcastToSession(sessionId, {
           type: WSEventType.AgentOutput,
-          payload: { data },
+          payload: { agentId, data },
           sessionId,
         });
         // Detect dev server URLs in agent output
@@ -61,10 +64,10 @@ export class WSHandler {
 
     this.services.agentManager.on(
       'exit',
-      (sessionId: string, code: number) => {
+      (sessionId: string, agentId: string, code: number) => {
         this.broadcastToSession(sessionId, {
           type: WSEventType.AgentStop,
-          payload: { exitCode: code },
+          payload: { agentId, exitCode: code },
           sessionId,
         });
         // Auto-emit git status and diff after agent finishes
@@ -95,10 +98,10 @@ export class WSHandler {
 
     this.services.agentManager.on(
       'error',
-      (sessionId: string, error: Error) => {
+      (sessionId: string, agentId: string, error: Error) => {
         this.broadcastToSession(sessionId, {
           type: WSEventType.AgentStop,
-          payload: { error: error.message },
+          payload: { agentId, error: error.message },
           sessionId,
         });
       },
@@ -169,7 +172,9 @@ export class WSHandler {
     ws.on('message', (raw: Buffer) => {
       try {
         const msg: WSMessage = JSON.parse(raw.toString('utf-8'));
-        this.route(client, msg);
+        this.route(client, msg).catch((err: unknown) => {
+          console.error('WS route error:', err);
+        });
       } catch {
         // Ignore malformed messages
       }
@@ -192,7 +197,7 @@ export class WSHandler {
   // Message routing
   // ------------------------------------------------------------------
 
-  private route(client: Client, msg: WSMessage): void {
+  private async route(client: Client, msg: WSMessage): Promise<void> {
     const { sessionManager, agentManager, terminalManager, fileManager, gitManager } =
       this.services;
 
@@ -445,37 +450,94 @@ export class WSHandler {
 
       // ---- Agent ----
       case WSEventType.AgentStart: {
-        const { sessionId, config } = msg.payload as {
+        const { sessionId, config, agentId, name } = msg.payload as {
           sessionId: string;
           config: { cmd: string; args?: string[]; env?: Record<string, string> };
+          agentId?: string;
+          name?: string;
         };
-        const workspace = sessionManager.getWorkspacePath(sessionId);
-        if (workspace) {
-          agentManager.spawn(sessionId, workspace, config);
-          this.emitActivity(sessionId, 'agent_start', `Agent started: ${config.cmd}`);
+
+        // If Docker is enabled and a container exists for this session, route through container
+        if (this.services.dockerEnabled() && this.services.containerManager.hasContainer(sessionId)) {
+          try {
+            const cmd = config.args ? [config.cmd, ...config.args].join(' ') : config.cmd;
+            const result = await this.services.containerManager.exec(sessionId, cmd);
+            this.broadcastToSession(sessionId, {
+              type: WSEventType.AgentOutput,
+              payload: { agentId: agentId || 'docker-agent', data: result.stdout + (result.stderr ? '\n' + result.stderr : '') },
+              sessionId,
+            });
+            this.broadcastToSession(sessionId, {
+              type: WSEventType.AgentStop,
+              payload: { agentId: agentId || 'docker-agent', exitCode: result.exitCode },
+              sessionId,
+            });
+            this.emitActivity(sessionId, 'agent_start', `${name || 'Agent'} started in Docker: ${config.cmd}`);
+          } catch (err: unknown) {
+            const e = err as Error;
+            this.broadcastToSession(sessionId, {
+              type: WSEventType.AgentStop,
+              payload: { agentId: agentId || 'docker-agent', error: e.message },
+              sessionId,
+            });
+          }
+        } else {
+          const workspace = sessionManager.getWorkspacePath(sessionId);
+          if (workspace) {
+            const spawnedAgentId = agentManager.spawn(sessionId, workspace, config, agentId, name);
+            this.broadcastToSession(sessionId, {
+              type: WSEventType.AgentStart,
+              payload: { agentId: spawnedAgentId, name: name || 'Agent', config },
+              sessionId,
+            });
+            this.emitActivity(sessionId, 'agent_start', `${name || 'Agent'} started: ${config.cmd}`);
+          }
         }
         break;
       }
 
       case WSEventType.AgentInput: {
-        const { sessionId, text } = msg.payload as { sessionId: string; text: string };
-        agentManager.sendInput(sessionId, text);
+        const { sessionId, agentId, text } = msg.payload as { sessionId: string; agentId: string; text: string };
+        if (agentId) {
+          agentManager.sendInput(sessionId, agentId, text);
+        }
         break;
       }
 
       case WSEventType.AgentStatus: {
-        const { sessionId } = msg.payload as { sessionId: string };
-        const status = agentManager.getStatus(sessionId);
-        this.send(client.ws, {
-          type: WSEventType.AgentStatus,
-          payload: { sessionId, ...status },
-        });
+        const { sessionId, agentId } = msg.payload as { sessionId: string; agentId?: string };
+        if (agentId) {
+          const status = agentManager.getStatus(sessionId, agentId);
+          this.send(client.ws, {
+            type: WSEventType.AgentStatus,
+            payload: { sessionId, agentId, ...status },
+          });
+        } else {
+          // Return all agents for session
+          const agents = agentManager.listAgents(sessionId);
+          this.send(client.ws, {
+            type: WSEventType.AgentList,
+            payload: { sessionId, agents },
+          });
+        }
         break;
       }
 
       case WSEventType.AgentStop: {
+        const { sessionId, agentId } = msg.payload as { sessionId: string; agentId: string };
+        if (agentId) {
+          agentManager.stop(sessionId, agentId);
+        }
+        break;
+      }
+
+      case WSEventType.AgentList: {
         const { sessionId } = msg.payload as { sessionId: string };
-        agentManager.stop(sessionId);
+        const agents = agentManager.listAgents(sessionId);
+        this.send(client.ws, {
+          type: WSEventType.AgentList,
+          payload: { sessionId, agents },
+        });
         break;
       }
 
@@ -521,6 +583,66 @@ export class WSHandler {
         if (msg.sessionId) {
           this.broadcastToSession(msg.sessionId, msg);
         }
+        break;
+      }
+
+      // ---- Voice signaling ----
+      case WSEventType.VoiceJoin: {
+        const { sessionId: voiceSid } = msg.payload as { sessionId: string; userName?: string };
+        this.broadcastToSession(voiceSid, {
+          type: WSEventType.VoiceJoin,
+          payload: { userId: client.userId, userName: client.userId },
+          sessionId: voiceSid,
+        });
+        break;
+      }
+
+      case WSEventType.VoiceLeave: {
+        const { sessionId: voiceSid } = msg.payload as { sessionId: string };
+        this.broadcastToSession(voiceSid, {
+          type: WSEventType.VoiceLeave,
+          payload: { userId: client.userId },
+          sessionId: voiceSid,
+        });
+        break;
+      }
+
+      case WSEventType.VoiceSignal: {
+        const { sessionId: voiceSid, targetUserId, signal } = msg.payload as {
+          sessionId: string;
+          targetUserId: string;
+          signal: unknown;
+        };
+        // Relay signal to the target user only
+        const targetClient = this.clients.get(targetUserId);
+        if (targetClient && targetClient.sessionId === voiceSid) {
+          this.send(targetClient.ws, {
+            type: WSEventType.VoiceSignal,
+            payload: { signal, fromUserId: client.userId },
+            sessionId: voiceSid,
+          });
+        }
+        break;
+      }
+
+      case WSEventType.VoiceUsers: {
+        const { sessionId: voiceSid } = msg.payload as { sessionId: string };
+        // Collect all clients in this session that have voice state
+        const sessionUsers = this.services.sessionManager.getUsers(voiceSid);
+        const voiceUsers: string[] = [];
+        if (sessionUsers) {
+          for (const uid of sessionUsers) {
+            const c = this.clients.get(uid);
+            if (c && c.sessionId === voiceSid) {
+              voiceUsers.push(uid);
+            }
+          }
+        }
+        this.send(client.ws, {
+          type: WSEventType.VoiceUsers,
+          payload: { users: voiceUsers },
+          sessionId: voiceSid,
+        });
         break;
       }
 

@@ -100,6 +100,9 @@ input, textarea { font-family: var(--font); outline: none; border: none; backgro
 .session-delete-btn { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px; border-radius: 4px; opacity: 0; transition: opacity 0.15s, color 0.15s; display: flex; align-items: center; }
 .session-item:hover .session-delete-btn { opacity: 1; }
 .session-delete-btn:hover { color: var(--error); background: var(--surface2); }
+.session-fork-btn { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px; border-radius: 4px; opacity: 0; transition: opacity 0.15s, color 0.15s; display: flex; align-items: center; }
+.session-item:hover .session-fork-btn { opacity: 1; }
+.session-fork-btn:hover { color: var(--accent); background: var(--accent-dim); }
 
 /* Center panel */
 .center-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
@@ -119,7 +122,7 @@ input, textarea { font-family: var(--font); outline: none; border: none; backgro
 
 /* Right panel */
 .right-panel {
-  width: 360px; min-width: 360px;
+  width: 520px; min-width: 360px;
   background: var(--surface); border-left: 1px solid var(--border);
   display: flex; flex-direction: column; overflow: hidden;
 }
@@ -377,7 +380,79 @@ input, textarea { font-family: var(--font); outline: none; border: none; backgro
 .toast.info { background: #3b82f6; }
 .toast-close { background: none; border: none; color: rgba(255,255,255,0.7); cursor: pointer; padding: 2px; display: flex; }
 @keyframes toast-in { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+/* ============================================================
+   Code Editor (Monaco)
+   ============================================================ */
+.files-panel { display: flex; flex: 1; overflow: hidden; }
+.files-tree-side { width: 160px; min-width: 120px; max-width: 220px; border-right: 1px solid var(--border); overflow-y: auto; flex-shrink: 0; }
+.files-editor-side { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+.editor-tab-bar { display: flex; align-items: center; background: var(--surface2); border-bottom: 1px solid var(--border); overflow-x: auto; min-height: 32px; }
+.editor-tab-item { display: flex; align-items: center; gap: 4px; padding: 5px 10px; font-size: 0.75rem; cursor: pointer; border-right: 1px solid var(--border); white-space: nowrap; transition: background 0.1s; color: var(--muted); }
+.editor-tab-item:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+.editor-tab-item.active { background: var(--bg); color: var(--accent); }
+.editor-tab-item .tab-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warning); flex-shrink: 0; }
+.editor-tab-item .tab-close { padding: 1px; border-radius: 3px; opacity: 0; transition: opacity 0.1s; display: flex; align-items: center; color: var(--muted); }
+.editor-tab-item:hover .tab-close { opacity: 1; }
+.editor-tab-item .tab-close:hover { color: var(--error); }
+.editor-toolbar { display: flex; align-items: center; gap: 6px; padding: 3px 8px; background: var(--surface2); border-bottom: 1px solid var(--border); min-height: 30px; }
+.editor-toolbar-btn { padding: 2px 10px; border-radius: 4px; font-size: 0.72rem; font-weight: 600; transition: all 0.15s; display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.editor-toolbar-btn.save { background: var(--accent-dim); color: var(--accent); }
+.editor-toolbar-btn.save:hover { background: var(--accent); color: #fff; }
+.editor-toolbar-btn.save:disabled { opacity: 0.4; cursor: default; }
+.editor-toolbar-btn.diff { background: var(--warning-dim); color: var(--warning); }
+.editor-toolbar-btn.diff:hover { background: var(--warning); color: #000; }
+.editor-toolbar-btn.accept { background: var(--success-dim); color: var(--success); }
+.editor-toolbar-btn.accept:hover { background: var(--success); color: #000; }
+.editor-toolbar-btn.reject { background: var(--error-dim); color: var(--error); }
+.editor-toolbar-btn.reject:hover { background: var(--error); color: #fff; }
+.editor-toolbar-btn.back { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+.editor-toolbar-btn.back:hover { border-color: #444; color: var(--text); }
+.monaco-container { flex: 1; min-height: 0; overflow: hidden; }
+.editor-empty { flex: 1; display: flex; align-items: center; justify-content: center; }
+
+/* ============================================================
+   Docker indicator
+   ============================================================ */
+.docker-indicator { display: flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 0.78rem; cursor: pointer; transition: all 0.15s; border: 1px solid var(--border); }
+.docker-indicator.available { color: var(--success); border-color: var(--success); }
+.docker-indicator.active { color: var(--success); background: var(--success-dim); border-color: var(--success); }
+.docker-indicator.unavailable { color: var(--dimmed); opacity: 0.5; cursor: default; }
+.settings-dropdown { position: relative; display: inline-flex; }
+.settings-menu { position: absolute; top: 100%; right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 0; min-width: 220px; z-index: 100; box-shadow: 0 8px 24px rgba(0,0,0,0.4); margin-top: 4px; }
+.settings-menu-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; font-size: 0.82rem; cursor: pointer; transition: background 0.1s; }
+.settings-menu-item:hover { background: var(--surface2); }
+.settings-menu-item label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.toggle-switch { width: 36px; height: 20px; background: var(--border); border-radius: 10px; position: relative; cursor: pointer; transition: background 0.2s; flex-shrink: 0; }
+.toggle-switch.on { background: var(--accent); }
+.toggle-switch::after { content: ''; position: absolute; width: 16px; height: 16px; background: #fff; border-radius: 50%; top: 2px; left: 2px; transition: transform 0.2s; }
+.toggle-switch.on::after { transform: translateX(16px); }
+.session-container-badge { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; background: var(--success-dim); color: var(--success); border-radius: 8px; font-size: 0.62rem; font-weight: 700; }
+
+/* ============================================================
+   Voice Chat
+   ============================================================ */
+.voice-btn { display: flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 0.78rem; cursor: pointer; transition: all 0.15s; border: 1px solid var(--border); }
+.voice-btn:hover { background: var(--surface2); }
+.voice-btn.active { color: var(--success); border-color: var(--success); background: var(--success-dim); }
+.voice-panel { position: fixed; bottom: 70px; right: 20px; width: 280px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: 0 8px 32px rgba(0,0,0,0.5); z-index: 90; display: flex; flex-direction: column; overflow: hidden; }
+.voice-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 0.85rem; font-weight: 700; }
+.voice-panel-body { flex: 1; padding: 8px 0; max-height: 260px; overflow-y: auto; }
+.voice-user { display: flex; align-items: center; gap: 10px; padding: 8px 16px; font-size: 0.82rem; transition: background 0.1s; }
+.voice-user:hover { background: var(--surface2); }
+.voice-user-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--accent-dim); display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 700; color: var(--accent); flex-shrink: 0; }
+.voice-user-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.voice-speaking-indicator { width: 8px; height: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 6px var(--success); animation: pulse 0.8s infinite; flex-shrink: 0; }
+.voice-muted-indicator { color: var(--error); font-size: 0.7rem; flex-shrink: 0; }
+.voice-panel-footer { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--border); }
+.voice-panel-footer button { flex: 1; padding: 6px 12px; border-radius: var(--radius); font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.voice-mute-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text); }
+.voice-mute-btn:hover { border-color: #444; }
+.voice-mute-btn.muted { background: var(--error-dim); border-color: var(--error); color: var(--error); }
+.voice-leave-btn { background: var(--error-dim); border: 1px solid transparent; color: var(--error); }
+.voice-leave-btn:hover { background: var(--error); color: #fff; }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -390,6 +465,85 @@ input, textarea { font-family: var(--font); outline: none; border: none; backgro
 const html = htm.bind(React.createElement);
 
 const { useState, useEffect, useRef, useCallback, useMemo, Fragment, createContext, useContext } = React;
+
+// ============================================================
+// Monaco Editor loader
+// ============================================================
+let monacoInstance = null;
+let monacoLoading = false;
+let monacoReady = false;
+
+function loadMonaco() {
+  if (monacoReady && monacoInstance) return Promise.resolve(monacoInstance);
+  if (monacoLoading) {
+    return new Promise((resolve) => {
+      const check = setInterval(() => {
+        if (monacoReady && monacoInstance) { clearInterval(check); resolve(monacoInstance); }
+      }, 50);
+    });
+  }
+  monacoLoading = true;
+  return new Promise((resolve, reject) => {
+    require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs' } });
+    require(['vs/editor/editor.main'], function() {
+      monacoInstance = window.monaco;
+      monacoReady = true;
+      monacoLoading = false;
+      resolve(monacoInstance);
+    }, function(err) {
+      monacoLoading = false;
+      reject(err);
+    });
+  });
+}
+
+function getLanguage(filePath) {
+  const ext = (filePath || '').split('.').pop().toLowerCase();
+  const map = {
+    'js': 'javascript', 'jsx': 'javascript', 'mjs': 'javascript', 'cjs': 'javascript',
+    'ts': 'typescript', 'tsx': 'typescript',
+    'py': 'python', 'pyw': 'python',
+    'rb': 'ruby',
+    'go': 'go',
+    'rs': 'rust',
+    'java': 'java',
+    'c': 'c', 'h': 'c',
+    'cpp': 'cpp', 'cc': 'cpp', 'cxx': 'cpp', 'hpp': 'cpp', 'hxx': 'cpp',
+    'cs': 'csharp',
+    'php': 'php',
+    'html': 'html', 'htm': 'html',
+    'css': 'css', 'scss': 'scss', 'less': 'less', 'sass': 'scss',
+    'json': 'json',
+    'xml': 'xml', 'svg': 'xml', 'xsl': 'xml',
+    'yaml': 'yaml', 'yml': 'yaml',
+    'md': 'markdown', 'mdx': 'markdown',
+    'sql': 'sql',
+    'sh': 'shell', 'bash': 'shell', 'zsh': 'shell',
+    'toml': 'ini',
+    'ini': 'ini', 'cfg': 'ini',
+    'graphql': 'graphql', 'gql': 'graphql',
+    'vue': 'html',
+    'svelte': 'html',
+    'dart': 'dart',
+    'lua': 'lua',
+    'r': 'r',
+    'swift': 'swift',
+    'kt': 'kotlin', 'kts': 'kotlin',
+    'scala': 'scala',
+    'ex': 'elixir', 'exs': 'elixir',
+    'erl': 'erlang',
+    'clj': 'clojure',
+    'hs': 'haskell',
+    'tf': 'hcl', 'hcl': 'hcl',
+  };
+  const name = (filePath || '').split('/').pop().toLowerCase();
+  if (name === 'dockerfile') return 'dockerfile';
+  if (name === 'makefile' || name === 'gnumakefile') return 'makefile';
+  if (name === '.gitignore' || name === '.dockerignore' || name === '.eslintignore' || name === '.prettierignore') return 'plaintext';
+  if (name === '.env' || name.startsWith('.env.')) return 'ini';
+  if (name === 'tsconfig.json' || name === 'package.json' || name === 'composer.json') return 'json';
+  return map[ext] || 'plaintext';
+}
 
 // ============================================================
 // Constants
@@ -419,6 +573,7 @@ const WS_EVENTS = {
   AgentOutput:   'agent:output',
   AgentStop:     'agent:stop',
   AgentStatus:   'agent:status',
+  AgentList:     'agent:list',
   PlanCreate:    'plan:create',
   PlanUpdate:    'plan:update',
   DiffShow:      'diff:show',
@@ -426,6 +581,10 @@ const WS_EVENTS = {
   UserJoin:      'user:join',
   UserLeave:     'user:leave',
   Activity:      'activity',
+  VoiceJoin:     'voice:join',
+  VoiceLeave:    'voice:leave',
+  VoiceSignal:   'voice:signal',
+  VoiceUsers:    'voice:users',
 };
 
 // ============================================================
@@ -661,6 +820,16 @@ const Icons = {
   Play: () => html`<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`,
   Eye: () => html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
   Diff: () => html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/><line x1="4" y1="19" x2="20" y2="19"/></svg>`,
+  GitHub: () => html`<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>`,
+  Check: () => html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`,
+  Search: () => html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
+  Fork: () => html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="3" r="2"/><circle cx="6" cy="21" r="2"/><circle cx="18" cy="21" r="2"/><path d="M12 5v5"/><path d="M12 10L6 19"/><path d="M12 10l6 9"/></svg>`,
+  Docker: () => html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="12" width="4" height="4" rx="0.5"/><rect x="8" y="12" width="4" height="4" rx="0.5"/><rect x="13" y="12" width="4" height="4" rx="0.5"/><rect x="8" y="7" width="4" height="4" rx="0.5"/><rect x="13" y="7" width="4" height="4" rx="0.5"/><rect x="18" y="12" width="4" height="4" rx="0.5"/><path d="M2 16.5C2 16.5 3 20 12 20C21 20 22 16.5 22 16.5"/><path d="M22 11C22 11 21.5 8 18 7.5"/></svg>`,
+  Mic: () => html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="1" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0014 0v-1"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`,
+  MicOff: () => html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="1" width="6" height="12" rx="3"/><line x1="1" y1="1" x2="23" y2="23"/><path d="M5 10v1a7 7 0 0014 0v-1"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`,
+  Settings: () => html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>`,
+  Phone: () => html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>`,
+  PhoneOff: () => html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.68 13.31a16 16 0 003.41 2.6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7a2 2 0 011.72 2v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.42 19.42 0 01-3.33-2.67m-2.67-3.34a19.79 19.79 0 01-3.07-8.63A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`,
 };
 
 // ============================================================
@@ -690,7 +859,7 @@ function Toast({ toast, onClose }) {
 // ============================================================
 // Components: Header
 // ============================================================
-function Header({ wsStatus, userId, sessions, currentSessionId }) {
+function Header({ wsStatus, userId, sessions, currentSessionId, githubAuth, onGithubClick, dockerStatus, onDockerToggle, voiceChatProps }) {
   const currentSession = sessions.find(s => s.id === currentSessionId);
   return html`
     <div class="header">
@@ -703,6 +872,7 @@ function Header({ wsStatus, userId, sessions, currentSessionId }) {
           <span style=${{ color: 'var(--dimmed)' }}>∕</span>
           <span style=${{ fontWeight: 600, color: 'var(--text)' }}>${currentSession.name}</span>
           <span style=${{ fontFamily: 'var(--mono)', fontSize: '0.72rem', color: 'var(--accent)', background: 'var(--accent-dim)', padding: '1px 8px', borderRadius: '10px' }}>${currentSession.branch.replace('session/', '🌿 ')}</span>
+          ${dockerStatus?.enabled && html`<span class="session-container-badge">🐳 container</span>`}
         </div>
       `}
       <div class="header-spacer" />
@@ -710,10 +880,37 @@ function Header({ wsStatus, userId, sessions, currentSessionId }) {
         <div class="dot ${wsStatus}" />
         <span>${wsStatus === 'connected' ? 'Connected' : wsStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}</span>
       </div>
-      <div class="header-user">
-        <div class="avatar">${getInitials(userId || 'G')}</div>
-        <span>${userId ? userId.slice(0, 12) : '...'}</span>
-      </div>
+      <${DockerSettings} dockerStatus=${dockerStatus} onToggle=${onDockerToggle} />
+      ${voiceChatProps && html`<${VoiceChat} ...${voiceChatProps} />`}
+      <button
+        onClick=${onGithubClick}
+        title=${githubAuth?.githubConnected ? 'GitHub connected' : 'Connect GitHub'}
+        style=${{
+          display: 'flex', alignItems: 'center', gap: '6px',
+          padding: '4px 12px', background: 'var(--surface2)',
+          borderRadius: '20px', fontSize: '0.82rem', cursor: 'pointer',
+          border: githubAuth?.githubConnected ? '1px solid var(--success)' : '1px solid var(--border)',
+          color: githubAuth?.githubConnected ? 'var(--success)' : 'var(--muted)',
+          transition: 'all 0.15s',
+        }}
+      >
+        ${githubAuth?.githubConnected
+          ? html`<${Icons.Check} /><span>GitHub</span>`
+          : html`<${Icons.GitHub} /><span>Connect</span>`
+        }
+      </button>
+      ${githubAuth?.githubConnected && githubAuth?.user && html`
+        <div class="header-user" style=${{ cursor: 'pointer' }}>
+          <img src=${githubAuth.user.avatar} style=${{ width: '24px', height: '24px', borderRadius: '50%' }} />
+          <span style=${{ fontSize: '0.82rem' }}>${githubAuth.user.name || githubAuth.user.login}</span>
+        </div>
+      `}
+      ${(!githubAuth?.githubConnected || !githubAuth?.user) && html`
+        <div class="header-user">
+          <div class="avatar">${getInitials(userId || 'G')}</div>
+          <span>${userId ? userId.slice(0, 12) : '...'}</span>
+        </div>
+      `}
     </div>
   `;
 }
@@ -721,7 +918,7 @@ function Header({ wsStatus, userId, sessions, currentSessionId }) {
 // ============================================================
 // Components: Sidebar (Session List)
 // ============================================================
-function Sidebar({ sessions, currentSessionId, onSelectSession, onCreateSession, onDeleteSession }) {
+function Sidebar({ sessions, currentSessionId, onSelectSession, onCreateSession, onDeleteSession, onForkSession }) {
   return html`
     <div class="sidebar">
       <div class="sidebar-header">
@@ -750,6 +947,9 @@ function Sidebar({ sessions, currentSessionId, onSelectSession, onCreateSession,
                 </div>
               </div>
             </div>
+            <button class="session-fork-btn" onClick=${(e) => { e.stopPropagation(); onForkSession(s.id); }} title="Fork session">
+              <${Icons.Fork} />
+            </button>
             <button class="session-delete-btn" onClick=${(e) => { e.stopPropagation(); onDeleteSession(s.id); }} title="Delete session">
               <${Icons.Close} />
             </button>
@@ -763,9 +963,10 @@ function Sidebar({ sessions, currentSessionId, onSelectSession, onCreateSession,
 // ============================================================
 // Components: Chat Tab
 // ============================================================
-function ChatTab({ messages, users, sessionId, onSend, agentRunning, onAgentRunningChange }) {
+function ChatTab({ messages, users, sessionId, onSend, agentRunning, onAgentRunningChange, agents }) {
   const [input, setInput] = useState('');
   const [agentMode, setAgentMode] = useState(false);
+  const [agentName, setAgentName] = useState('Agent 1');
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [autocompleteItems, setAutocompleteItems] = useState([]);
   const [acIndex, setAcIndex] = useState(0);
@@ -863,12 +1064,18 @@ function ChatTab({ messages, users, sessionId, onSend, agentRunning, onAgentRunn
     if (agentMode) {
       if (agentRunning) {
         // Agent is already running — send text as stdin input
-        ws.send(WS_EVENTS.AgentInput, { sessionId, text: text + '\n' }, sessionId);
+        ws.send(WS_EVENTS.AgentInput, { sessionId, agentId: window._currentAgentId, text: text + '\n' }, sessionId);
       } else {
         // No agent running — spawn one with the prompt as initial context
+        const newAgentId = 'agent-' + Date.now();
+        window._currentAgentId = newAgentId;
+        window._agentNames = window._agentNames || {};
+        window._agentNames[newAgentId] = agentName;
         ws.send(WS_EVENTS.AgentStart, {
           sessionId,
           config: { cmd: 'claude' },
+          agentId: newAgentId,
+          name: agentName,
         }, sessionId);
         onAgentRunningChange(true);
       }
@@ -877,7 +1084,7 @@ function ChatTab({ messages, users, sessionId, onSend, agentRunning, onAgentRunn
     onSend(text, agentMode ? 'plan' : 'text');
     setInput('');
     setShowAutocomplete(false);
-  }, [input, sessionId, agentMode, onSend, agentRunning, onAgentRunningChange]);
+  }, [input, sessionId, agentMode, onSend, agentRunning, onAgentRunningChange, agentName]);
 
   const handleImageUpload = useCallback((e) => {
     const file = e.target.files?.[0];
@@ -936,7 +1143,9 @@ function ChatTab({ messages, users, sessionId, onSend, agentRunning, onAgentRunn
           `}
           ${messages.map(msg => {
             const user = users.find(u => u.id === msg.userId);
-            const isAgent = user?.isAgent;
+            const isAgent = user?.isAgent || msg.userId === 'agent';
+            const agentDisplayName = (msg.agentId && window._agentNames?.[msg.agentId]) ? window._agentNames[msg.agentId] : null;
+            const displayUserId = agentDisplayName || (user?.name || msg.userId.slice(0, 8));
             return html`
               <div key=${msg.id} class="msg ${isAgent ? 'msg-agent' : ''}">
                 <div class="msg-avatar ${isAgent ? 'agent' : (msg.type === 'system' ? 'system' : 'user')}">
@@ -945,7 +1154,7 @@ function ChatTab({ messages, users, sessionId, onSend, agentRunning, onAgentRunn
                 <div class="msg-body">
                   <div class="msg-header">
                     <span class="msg-username" style=${{ color: isAgent ? 'var(--accent)' : 'var(--text)' }}>
-                      ${msg.type === 'system' ? 'System' : (user?.name || msg.userId.slice(0, 8))}
+                      ${msg.type === 'system' ? 'System' : (isAgent && agentDisplayName ? '🤖 ' + agentDisplayName : displayUserId)}
                     </span>
                     <span class="msg-time">${formatTimeShort(msg.timestamp)}</span>
                   </div>
@@ -993,8 +1202,17 @@ function ChatTab({ messages, users, sessionId, onSend, agentRunning, onAgentRunn
         </button>
         <button class="agent-toggle ${agentMode ? 'on' : 'off'}" onClick=${() => setAgentMode(!agentMode)} title="Toggle agent mode">
           <${Icons.Bot} />
-          <span>Agent${agentMode && agentRunning ? ' ●' : agentMode ? ' ○' : ''}</span>
+          <span>${agentMode && agentRunning ? agentName + ' ●' : agentMode ? agentName + ' ○' : 'Agent'}</span>
         </button>
+        ${agentMode && html`
+          <input
+            type="text"
+            value=${agentName}
+            onInput=${e => setAgentName(e.target.value)}
+            placeholder="Agent name..."
+            style=${{ width: '100px', padding: '4px 8px', fontSize: '0.78rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)' }}
+          />
+        `}
         <button class="input-btn send-btn" onClick=${handleSend} title="Send message">
           <${Icons.Send} />
         </button>
@@ -1177,19 +1395,90 @@ function PlanTab({ sessionId, planSteps }) {
 }
 
 // ============================================================
-// Components: Files Tab
+// Components: Files Tab (with Monaco Editor)
 // ============================================================
-function FilesTab({ sessionId, fileTree }) {
+function FilesTab({ sessionId, fileTree, diffs }) {
   const [expandedDirs, setExpandedDirs] = useState(new Set());
-  const [viewingFile, setViewingFile] = useState(null);
-  const [fileContent, setFileContent] = useState('');
+  const [openFiles, setOpenFiles] = useState([]); // [{ path }]
+  const [activeFilePath, setActiveFilePath] = useState(null);
+  const [fileContents, setFileContents] = useState({}); // { path: content }
+  const [savedContents, setSavedContents] = useState({}); // { path: content }
+  const [editorMode, setEditorMode] = useState('edit'); // 'edit' | 'diff'
+  const [diffOriginal, setDiffOriginal] = useState('');
+  const [monacoError, setMonacoError] = useState(null);
 
+  const editorContainerRef = useRef(null);
+  const editorInstanceRef = useRef(null);
+  const diffEditorInstanceRef = useRef(null);
+  const monacoRef = useRef(null);
+  const currentFilePathRef = useRef(null);
+
+  // Keep ref in sync with state
+  currentFilePathRef.current = activeFilePath;
+
+  // Save handler ref to avoid stale closures in Monaco commands
+  const saveHandlerRef = useRef(null);
+  saveHandlerRef.current = () => {
+    const filePath = currentFilePathRef.current;
+    if (!filePath || !sessionId) return;
+    let content;
+    if (editorMode === 'diff' && diffEditorInstanceRef.current) {
+      content = diffEditorInstanceRef.current.getModifiedEditor().getValue();
+    } else if (editorInstanceRef.current) {
+      content = editorInstanceRef.current.getValue();
+    } else {
+      content = fileContents[filePath];
+    }
+    if (content !== undefined) {
+      ws.send(WS_EVENTS.FileWrite, { sessionId, filePath, content }, sessionId);
+      setSavedContents(prev => ({ ...prev, [filePath]: content }));
+      setFileContents(prev => ({ ...prev, [filePath]: content }));
+    }
+  };
+
+  // Request file list on mount
   useEffect(() => {
-    if (sessionId) {
-      ws.send(WS_EVENTS.FileList, { sessionId }, sessionId);
+    if (sessionId) ws.send(WS_EVENTS.FileList, { sessionId }, sessionId);
+  }, [sessionId]);
+
+  // Listen for file:read responses
+  useWS(WS_EVENTS.FileRead, useCallback((msg) => {
+    if (msg.payload) {
+      const { content, filePath } = msg.payload;
+      const c = content || '';
+      setFileContents(prev => ({ ...prev, [filePath]: c }));
+      setSavedContents(prev => ({ ...prev, [filePath]: c }));
+      setOpenFiles(prev => {
+        if (prev.find(f => f.path === filePath)) return prev;
+        return [...prev, { path: filePath }];
+      });
+      setActiveFilePath(filePath);
+      setEditorMode('edit');
+    }
+  }, []));
+
+  // Open file handler — sends file:read WS event
+  const openFile = useCallback((node) => {
+    if (sessionId && node.type !== 'directory') {
+      ws.send(WS_EVENTS.FileRead, { sessionId, filePath: node.path }, sessionId);
     }
   }, [sessionId]);
 
+  // Close file tab
+  const closeFile = useCallback((filePath, e) => {
+    if (e) e.stopPropagation();
+    setOpenFiles(prev => {
+      const next = prev.filter(f => f.path !== filePath);
+      // If closing the active file, switch to the last remaining tab
+      if (currentFilePathRef.current === filePath) {
+        setActiveFilePath(next.length > 0 ? next[next.length - 1].path : null);
+        setEditorMode('edit');
+      }
+      return next;
+    });
+  }, []);
+
+  // Toggle directory expansion
   const toggleDir = useCallback((path) => {
     setExpandedDirs(prev => {
       const next = new Set(prev);
@@ -1198,57 +1487,202 @@ function FilesTab({ sessionId, fileTree }) {
     });
   }, [sessionId]);
 
-  const viewFile = useCallback((node) => {
-    if (sessionId) {
-      ws.send(WS_EVENTS.FileRead, { sessionId, filePath: node.path }, sessionId);
-    }
-  }, [sessionId]);
+  // Create / switch Monaco editor when active file or mode changes
+  useEffect(() => {
+    const filePath = activeFilePath;
+    const mode = editorMode;
+    if (!filePath || !editorContainerRef.current) return;
 
-  useWS(WS_EVENTS.FileRead, useCallback((msg) => {
-    if (msg.payload) {
-      setFileContent(msg.payload.content || '');
-      setViewingFile(msg.payload.filePath);
-    }
-  }, []));
+    const content = fileContents[filePath];
+    if (content === undefined) return; // content not loaded yet
 
+    let disposed = false;
+
+    loadMonaco().then(monaco => {
+      if (disposed) return;
+      monacoRef.current = monaco;
+      setMonacoError(null);
+
+      // Dispose previous editors
+      if (editorInstanceRef.current) { editorInstanceRef.current.dispose(); editorInstanceRef.current = null; }
+      if (diffEditorInstanceRef.current) { diffEditorInstanceRef.current.dispose(); diffEditorInstanceRef.current = null; }
+
+      const container = editorContainerRef.current;
+      if (!container) return;
+
+      if (mode === 'diff') {
+        const lang = getLanguage(filePath);
+        const originalContent = diffOriginal !== undefined ? diffOriginal : (savedContents[filePath] || '');
+        const originalModel = monaco.editor.createModel(originalContent, lang);
+        const modifiedModel = monaco.editor.createModel(content, lang);
+        diffEditorInstanceRef.current = monaco.editor.createDiffEditor(container, {
+          theme: 'vs-dark',
+          readOnly: false,
+          automaticLayout: true,
+          renderSideBySide: true,
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
+          fontSize: 13,
+        });
+        diffEditorInstanceRef.current.setModel({ original: originalModel, modified: modifiedModel });
+      } else {
+        const lang = getLanguage(filePath);
+        const model = monaco.editor.createModel(content, lang);
+        editorInstanceRef.current = monaco.editor.create(container, {
+          model: model,
+          theme: 'vs-dark',
+          readOnly: false,
+          automaticLayout: true,
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
+          fontSize: 13,
+          wordWrap: 'on',
+          padding: { top: 8 },
+        });
+
+        // Track content changes for dirty state
+        editorInstanceRef.current.onDidChangeModelContent(() => {
+          const newContent = editorInstanceRef.current.getValue();
+          setFileContents(prev => ({ ...prev, [filePath]: newContent }));
+        });
+
+        // Ctrl+S / Cmd+S to save
+        editorInstanceRef.current.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+          saveHandlerRef.current?.();
+        });
+      }
+    }).catch(err => {
+      console.error('Monaco load error:', err);
+      setMonacoError('Failed to load editor');
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [activeFilePath, editorMode, fileContents[activeFilePath] === undefined ? '__undef__' : '__def__']);
+
+  // Show diff for current file
+  const showDiff = useCallback(() => {
+    if (!activeFilePath) return;
+    // Try to find matching diff for this file
+    const fileName = activeFilePath.split('/').pop();
+    const fileDiff = diffs.find(d => {
+      const diffFile = d.file || d.title || d.filePath || '';
+      return diffFile === activeFilePath || diffFile === fileName || activeFilePath.endsWith(diffFile);
+    });
+    // Original content: from diff if available, otherwise from saved contents
+    const original = fileDiff?.originalContent !== undefined ? fileDiff.originalContent : (savedContents[activeFilePath] || '');
+    setDiffOriginal(original);
+    setEditorMode('diff');
+  }, [activeFilePath, diffs, savedContents]);
+
+  // Accept changes (save current modified content)
+  const acceptChanges = useCallback(() => {
+    saveHandlerRef.current?.();
+    setEditorMode('edit');
+  }, []);
+
+  // Reject changes (revert to original content)
+  const rejectChanges = useCallback(() => {
+    if (!activeFilePath || !sessionId) return;
+    const original = diffOriginal !== undefined ? diffOriginal : savedContents[activeFilePath];
+    if (original !== undefined) {
+      ws.send(WS_EVENTS.FileWrite, { sessionId, filePath: activeFilePath, content: original }, sessionId);
+      setFileContents(prev => ({ ...prev, [activeFilePath]: original }));
+      setSavedContents(prev => ({ ...prev, [activeFilePath]: original }));
+    }
+    setEditorMode('edit');
+  }, [activeFilePath, diffOriginal, savedContents, sessionId]);
+
+  // Render file tree node
   const renderNode = useCallback((node, depth) => {
     if (!node) return null;
     const isDir = node.type === 'directory';
     const isExpanded = expandedDirs.has(node.path);
     const sizeStr = node.size ? (node.size < 1024 ? node.size + ' B' : (node.size / 1024).toFixed(1) + ' KB') : '';
+    const isActive = node.path === activeFilePath;
     return html`
       <div key=${node.path}>
-        <div class="file-node" style=${{ paddingLeft: (8 + depth * 16) + 'px' }} onClick=${() => isDir ? toggleDir(node.path) : viewFile(node)}>
+        <div class="file-node" style=${{ paddingLeft: (8 + depth * 14) + 'px', ...(isActive ? { background: 'var(--accent-dim)', color: 'var(--accent)' } : {}) }} onClick=${() => isDir ? toggleDir(node.path) : openFile(node)}>
           ${isDir ? html`<span class="file-icon">${isExpanded ? '📂' : '📁'}</span>` : html`<span class="file-icon">📄</span>`}
-          <span class="file-name">${node.name}</span>
+          <span class="file-name" style=${{ fontSize: '0.78rem' }}>${node.name}</span>
           ${!isDir && sizeStr && html`<span class="file-meta">${sizeStr}</span>`}
         </div>
         ${isDir && isExpanded && node.children && node.children.map(child => renderNode(child, depth + 1))}
       </div>
     `;
-  }, [expandedDirs, toggleDir, viewFile]);
+  }, [expandedDirs, toggleDir, openFile, activeFilePath]);
+
+  const getFileName = (path) => (path || '').split('/').pop();
+  const isDirty = (path) => {
+    const current = fileContents[path];
+    const saved = savedContents[path];
+    return current !== undefined && saved !== undefined && current !== saved;
+  };
 
   return html`
-    <div style=${{ flex: 1, overflow: 'auto' }}>
-      <div class="file-tree">
-        ${fileTree && fileTree.length > 0
-          ? fileTree.map(node => renderNode(node, 0))
-          : html`<div class="empty-state" style=${{ padding: '40px 16px' }}><p style=${{ fontSize: '0.8rem' }}>No files loaded</p></div>`
-        }
+    <div class="files-panel">
+      <div class="files-tree-side">
+        <div class="file-tree">
+          ${fileTree && fileTree.length > 0
+            ? fileTree.map(node => renderNode(node, 0))
+            : html`<div class="empty-state" style=${{ padding: '40px 8px' }}><p style=${{ fontSize: '0.78rem' }}>No files</p></div>`
+          }
+        </div>
       </div>
-      ${viewingFile && html`
-        <div class="modal-overlay" onClick=${() => setViewingFile(null)}>
-          <div class="modal" onClick=${e => e.stopPropagation()}>
-            <div class="modal-header">
-              <h3>${viewingFile}</h3>
-              <button onClick=${() => setViewingFile(null)}><${Icons.Close} /></button>
-            </div>
-            <div class="modal-body">
-              <pre>${fileContent}</pre>
+      <div class="files-editor-side">
+        ${openFiles.length > 0 && activeFilePath ? html`
+          <div class="editor-tab-bar">
+            ${openFiles.map(f => html`
+              <div
+                key=${f.path}
+                class="editor-tab-item ${f.path === activeFilePath ? 'active' : ''}"
+                onClick=${() => { setActiveFilePath(f.path); setEditorMode('edit'); }}
+              >
+                ${isDirty(f.path) && html`<span class="tab-dot" />`}
+                <span>${getFileName(f.path)}</span>
+                <button class="tab-close" onClick=${(e) => closeFile(f.path, e)}>
+                  <${Icons.Close} />
+                </button>
+              </div>
+            `)}
+          </div>
+          <div class="editor-toolbar">
+            ${editorMode === 'edit' ? html`
+              <button class="editor-toolbar-btn save" onClick=${() => saveHandlerRef.current?.()} disabled=${!isDirty(activeFilePath)}>
+                💾 Save
+              </button>
+              <button class="editor-toolbar-btn diff" onClick=${showDiff}>
+                ↔ Show Diff
+              </button>
+            ` : html`
+              <button class="editor-toolbar-btn accept" onClick=${acceptChanges}>
+                ✓ Accept Changes
+              </button>
+              <button class="editor-toolbar-btn reject" onClick=${rejectChanges}>
+                ✕ Reject Changes
+              </button>
+              <button class="editor-toolbar-btn back" onClick=${() => setEditorMode('edit')}>
+                ← Back to Edit
+              </button>
+            `}
+            <span style=${{ flex: 1 }} />
+            <span style=${{ fontSize: '0.68rem', color: 'var(--dimmed)', fontFamily: 'var(--mono)' }}>${activeFilePath}</span>
+          </div>
+          ${monacoError && html`
+            <div style=${{ padding: '12px', color: 'var(--error)', fontSize: '0.82rem' }}>${monacoError}</div>
+          `}
+          <div class="monaco-container" ref=${editorContainerRef} />
+        ` : html`
+          <div class="editor-empty">
+            <div class="empty-state">
+              <div class="empty-icon">📝</div>
+              <h3>No file open</h3>
+              <p>Click a file in the tree to edit</p>
             </div>
           </div>
-        </div>
-      `}
+        `}
+      </div>
     </div>
   `;
 }
@@ -1440,7 +1874,7 @@ function RightPanel({ sessionId, fileTree, previewUrl, diffs, collapsed, onToggl
           <div class="tab ${activeTab === 'preview' ? 'active' : ''}" onClick=${() => setActiveTab('preview')}>Preview</div>
         </div>
         <div style=${{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          ${activeTab === 'files' && html`<${FilesTab} sessionId=${sessionId} fileTree=${fileTree} />`}
+          ${activeTab === 'files' && html`<${FilesTab} sessionId=${sessionId} fileTree=${fileTree} diffs=${diffs} />`}
           ${activeTab === 'git' && html`<${GitTab} sessionId=${sessionId} />`}
           ${activeTab === 'diff' && html`<${DiffPanel} diffs=${diffs} />`}
           ${activeTab === 'preview' && html`<${PreviewTab} previewUrl=${previewUrl} />`}
@@ -1454,11 +1888,84 @@ function RightPanel({ sessionId, fileTree, previewUrl, diffs, collapsed, onToggl
 // Components: Dashboard
 // ============================================================
 function Dashboard({ sessions, onSelectSession, onCreateSession, activities }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [dashStats, setDashStats] = useState({ totalSessions: 0, activeAgents: 0, recentCommits: 0 });
+  const [summary, setSummary] = useState('');
+
+  // Fetch dashboard suggestions
+  useEffect(() => {
+    fetch('/api/dashboard/suggestions')
+      .then(r => r.json())
+      .then(data => {
+        if (data.suggestions) setSuggestions(data.suggestions);
+        if (data.stats) setDashStats(data.stats);
+        if (data.summary) setSummary(data.summary);
+      })
+      .catch(() => {});
+  }, [sessions]);
+
+  // Time-based greeting
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  };
+
+  const handleSuggestionClick = (suggestion) => {
+    if (suggestion.action?.type === 'navigate_session' && suggestion.action?.sessionId) {
+      onSelectSession(suggestion.action.sessionId);
+    } else if (suggestion.action?.type === 'create_session') {
+      onCreateSession();
+    }
+  };
+
   return html`
     <div class="dashboard">
       <div class="dashboard-header">
-        <h1>Welcome to MADE</h1>
-        <p>Multiplayer Agent Development Environment — collaborate with AI agents in real-time</p>
+        <h1>${getGreeting()} 👋</h1>
+        <p>${summary || 'Multiplayer Agent Development Environment — collaborate with AI agents in real-time'}</p>
+      </div>
+
+      ${suggestions.length > 0 && html`
+        <div style=${{ marginBottom: '28px' }}>
+          <h2 style=${{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '12px' }}>Suggestions</h2>
+          <div style=${{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '10px' }}>
+            ${suggestions.map((s, i) => html`
+              <div
+                key=${i}
+                onClick=${() => handleSuggestionClick(s)}
+                style=${{
+                  display: 'flex', alignItems: 'center', gap: '12px',
+                  padding: '14px 18px', background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-lg)', cursor: 'pointer', transition: 'all 0.15s',
+                }}
+                onMouseEnter=${e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)'; }}
+                onMouseLeave=${e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}
+              >
+                <div style=${{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--accent-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', flexShrink: 0 }}>
+                  ${s.action?.type === 'create_session' ? '🚀' : s.action?.type === 'navigate_session' ? '🔄' : '💡'}
+                </div>
+                <span style=${{ fontSize: '0.88rem', fontWeight: 500 }}>${s.text}</span>
+              </div>
+            `)}
+          </div>
+        </div>
+      `}
+
+      <div style=${{ display: 'flex', gap: '16px', marginBottom: '28px' }}>
+        <div style=${{ flex: 1, padding: '18px 22px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)' }}>
+          <div style=${{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--muted)', marginBottom: '6px' }}>Total Sessions</div>
+          <div style=${{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text)' }}>${dashStats.totalSessions}</div>
+        </div>
+        <div style=${{ flex: 1, padding: '18px 22px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)' }}>
+          <div style=${{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--muted)', marginBottom: '6px' }}>Active Agents</div>
+          <div style=${{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--accent)' }}>${dashStats.activeAgents}</div>
+        </div>
+        <div style=${{ flex: 1, padding: '18px 22px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)' }}>
+          <div style=${{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--muted)', marginBottom: '6px' }}>Recent Commits</div>
+          <div style=${{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--success)' }}>${dashStats.recentCommits}</div>
+        </div>
       </div>
 
       <div class="dashboard-grid">
@@ -1505,45 +2012,618 @@ function Dashboard({ sessions, onSelectSession, onCreateSession, activities }) {
 // ============================================================
 // Components: New Session Modal
 // ============================================================
-function NewSessionModal({ onClose, onSubmit }) {
+function NewSessionModal({ onClose, onSubmit, githubAuth }) {
   const [name, setName] = useState('');
   const [repoUrl, setRepoUrl] = useState('');
+  const [activeTab, setActiveTab] = useState('manual');
+  const [repos, setRepos] = useState([]);
+  const [selectedRepo, setSelectedRepo] = useState(null);
+  const [issues, setIssues] = useState([]);
+  const [pulls, setPulls] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loadingItems, setLoadingItems] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  // Fetch repos when GitHub tab is selected
+  useEffect(() => {
+    if ((activeTab === 'issue' || activeTab === 'pr') && githubAuth?.githubConnected && repos.length === 0) {
+      setLoading(true);
+      fetch('/api/github/repos')
+        .then(r => r.json())
+        .then(data => { setRepos(Array.isArray(data) ? data : []); setLoading(false); })
+        .catch(() => { setLoading(false); });
+    }
+  }, [activeTab, githubAuth]);
+
+  // Fetch issues when a repo is selected in issue tab
+  useEffect(() => {
+    if (activeTab === 'issue' && selectedRepo) {
+      setLoadingItems(true);
+      setIssues([]);
+      fetch(`/api/github/repos/${selectedRepo.owner}/${selectedRepo.name}/issues`)
+        .then(r => r.json())
+        .then(data => { setIssues(Array.isArray(data) ? data : []); setLoadingItems(false); })
+        .catch(() => { setLoadingItems(false); });
+    }
+  }, [activeTab, selectedRepo]);
+
+  // Fetch PRs when a repo is selected in PR tab
+  useEffect(() => {
+    if (activeTab === 'pr' && selectedRepo) {
+      setLoadingItems(true);
+      setPulls([]);
+      fetch(`/api/github/repos/${selectedRepo.owner}/${selectedRepo.name}/pulls`)
+        .then(r => r.json())
+        .then(data => { setPulls(Array.isArray(data) ? data : []); setLoadingItems(false); })
+        .catch(() => { setLoadingItems(false); })
+    }
+  }, [activeTab, selectedRepo]);
+
   const submit = () => {
     const n = name.trim();
     if (n) onSubmit(n, repoUrl.trim() || undefined);
   };
+
+  const handleCreateFromIssue = async (issue) => {
+    setCreating(true);
+    try {
+      const res = await fetch('/api/sessions/from-issue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ owner: selectedRepo.owner, repo: selectedRepo.name, issueNumber: issue.number }),
+      });
+      const session = await res.json();
+      if (session?.id) {
+        onSubmit(session.name, undefined, session);
+      }
+    } catch (e) {
+      console.error('Failed to create session from issue:', e);
+    }
+    setCreating(false);
+  };
+
+  const handleCreateFromPR = async (pr) => {
+    setCreating(true);
+    try {
+      const res = await fetch('/api/sessions/from-pr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ owner: selectedRepo.owner, repo: selectedRepo.name, prNumber: pr.number }),
+      });
+      const session = await res.json();
+      if (session?.id) {
+        onSubmit(session.name, undefined, session);
+      }
+    } catch (e) {
+      console.error('Failed to create session from PR:', e);
+    }
+    setCreating(false);
+  };
+
+  const tabStyle = (tab) => ({
+    padding: '8px 16px', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer',
+    borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
+    color: activeTab === tab ? 'var(--accent)' : 'var(--muted)',
+    transition: 'all 0.15s',
+  });
+
   return html`
     <div class="modal-overlay" onClick=${onClose}>
-      <div class="modal" style=${{ maxWidth: '420px' }} onClick=${e => e.stopPropagation()}>
+      <div class="modal" style=${{ maxWidth: '560px' }} onClick=${e => e.stopPropagation()}>
         <div class="modal-header">
           <h3>New Session</h3>
           <button onClick=${onClose}><${Icons.Close} /></button>
         </div>
+        <div style=${{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border)', padding: '0 20px' }}>
+          <div style=${tabStyle('manual')} onClick=${() => { setActiveTab('manual'); setSelectedRepo(null); }}>Manual</div>
+          <div style=${{ ...tabStyle('issue'), opacity: githubAuth?.githubConnected ? 1 : 0.4, cursor: githubAuth?.githubConnected ? 'pointer' : 'default' }} onClick=${() => githubAuth?.githubConnected && setActiveTab('issue')}>From GitHub Issue</div>
+          <div style=${{ ...tabStyle('pr'), opacity: githubAuth?.githubConnected ? 1 : 0.4, cursor: githubAuth?.githubConnected ? 'pointer' : 'default' }} onClick=${() => githubAuth?.githubConnected && setActiveTab('pr')}>From GitHub PR</div>
+        </div>
         <div class="modal-body">
+          ${activeTab === 'manual' && html`
+            <div>
+              <label style=${{ fontSize: '0.82rem', color: 'var(--muted)', display: 'block', marginBottom: '6px' }}>Session Name</label>
+              <input
+                class="new-session-modal-input"
+                placeholder="My awesome project..."
+                value=${name}
+                onInput=${e => setName(e.target.value)}
+                onKeyDown=${e => e.key === 'Enter' && submit()}
+                autoFocus
+              />
+              <label style=${{ fontSize: '0.82rem', color: 'var(--muted)', display: 'block', marginBottom: '6px', marginTop: '14px' }}>Clone Repository (optional)</label>
+              <input
+                class="new-session-modal-input"
+                placeholder="https://github.com/user/repo.git"
+                value=${repoUrl}
+                onInput=${e => setRepoUrl(e.target.value)}
+                onKeyDown=${e => e.key === 'Enter' && submit()}
+              />
+            </div>
+          `}
+          ${(activeTab === 'issue' || activeTab === 'pr') && !githubAuth?.githubConnected && html`
+            <div class="empty-state" style=${{ padding: '40px 20px' }}>
+              <${Icons.GitHub} />
+              <h3 style=${{ marginTop: '12px' }}>GitHub Not Connected</h3>
+              <p>Connect your GitHub account to browse issues and PRs</p>
+              <a href="/api/auth/github" style=${{ marginTop: '12px', display: 'inline-block', padding: '8px 20px', background: 'var(--accent)', color: '#fff', borderRadius: 'var(--radius)', fontWeight: 600, textDecoration: 'none', fontSize: '0.85rem' }}>Connect GitHub</a>
+            </div>
+          `}
+          ${(activeTab === 'issue' || activeTab === 'pr') && githubAuth?.githubConnected && html`
+            <div>
+              <label style=${{ fontSize: '0.82rem', color: 'var(--muted)', display: 'block', marginBottom: '6px' }}>Select Repository</label>
+              ${loading && html`<div class="loading-spinner" style=${{ padding: '20px' }}><div class="spinner" /></div>`}
+              ${!loading && !selectedRepo && html`
+                <div style=${{ maxHeight: '300px', overflow: 'auto' }}>
+                  ${repos.length === 0 && html`<p style=${{ color: 'var(--muted)', fontSize: '0.82rem', padding: '12px' }}>No repositories found</p>`}
+                  ${repos.map(r => html`
+                    <div
+                      key=${r.full_name}
+                      onClick=${() => setSelectedRepo(r)}
+                      style=${{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: 'var(--radius)', cursor: 'pointer', transition: 'background 0.1s', marginBottom: '2px' }}
+                      onMouseEnter=${e => e.currentTarget.style.background = 'var(--surface2)'}
+                      onMouseLeave=${e => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <${Icons.GitHub} />
+                      <div style=${{ flex: 1 }}>
+                        <div style=${{ fontWeight: 600, fontSize: '0.85rem' }}>${r.full_name}</div>
+                        ${r.description && html`<div style=${{ fontSize: '0.75rem', color: 'var(--muted)' }}>${r.description.slice(0, 60)}</div>`}
+                      </div>
+                      ${r.private && html`<span style=${{ fontSize: '0.7rem', padding: '2px 8px', background: 'var(--warning-dim)', color: 'var(--warning)', borderRadius: '10px' }}>Private</span>`}
+                    </div>
+                  `)}
+                </div>
+              `}
+              ${!loading && selectedRepo && html`
+                <div style=${{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', padding: '8px 12px', background: 'var(--surface2)', borderRadius: 'var(--radius)' }}>
+                  <${Icons.GitHub} />
+                  <span style=${{ fontWeight: 600, fontSize: '0.85rem' }}>${selectedRepo.full_name}</span>
+                  <button style=${{ marginLeft: 'auto', color: 'var(--muted)', fontSize: '0.75rem' }} onClick=${() => { setSelectedRepo(null); setIssues([]); setPulls([]); }}>Change</button>
+                </div>
+                ${loadingItems && html`<div class="loading-spinner" style=${{ padding: '20px' }}><div class="spinner" /></div>`}
+                ${!loadingItems && activeTab === 'issue' && html`
+                  <div style=${{ maxHeight: '260px', overflow: 'auto' }}>
+                    ${issues.length === 0 && html`<p style=${{ color: 'var(--muted)', fontSize: '0.82rem', padding: '12px' }}>No open issues found</p>`}
+                    ${issues.map(issue => html`
+                      <div
+                        key=${issue.number}
+                        onClick=${() => !creating && handleCreateFromIssue(issue)}
+                        style=${{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: 'var(--radius)', cursor: creating ? 'wait' : 'pointer', transition: 'background 0.1s', marginBottom: '2px', opacity: creating ? 0.6 : 1 }}
+                        onMouseEnter=${e => !creating && (e.currentTarget.style.background = 'var(--surface2)')}
+                        onMouseLeave=${e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <span style=${{ color: 'var(--success)', fontSize: '0.85rem' }}>●</span>
+                        <div style=${{ flex: 1 }}>
+                          <div style=${{ fontWeight: 600, fontSize: '0.82rem' }}>#${issue.number} ${issue.title}</div>
+                          <div style=${{ fontSize: '0.72rem', color: 'var(--muted)' }}>by ${issue.user} · ${formatTime(issue.updated_at)}</div>
+                        </div>
+                      </div>
+                    `)}
+                  </div>
+                `}
+                ${!loadingItems && activeTab === 'pr' && html`
+                  <div style=${{ maxHeight: '260px', overflow: 'auto' }}>
+                    ${pulls.length === 0 && html`<p style=${{ color: 'var(--muted)', fontSize: '0.82rem', padding: '12px' }}>No open pull requests found</p>`}
+                    ${pulls.map(pr => html`
+                      <div
+                        key=${pr.number}
+                        onClick=${() => !creating && handleCreateFromPR(pr)}
+                        style=${{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: 'var(--radius)', cursor: creating ? 'wait' : 'pointer', transition: 'background 0.1s', marginBottom: '2px', opacity: creating ? 0.6 : 1 }}
+                        onMouseEnter=${e => !creating && (e.currentTarget.style.background = 'var(--surface2)')}
+                        onMouseLeave=${e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <span style=${{ color: 'var(--accent)', fontSize: '0.85rem' }}>⑂</span>
+                        <div style=${{ flex: 1 }}>
+                          <div style=${{ fontWeight: 600, fontSize: '0.82rem' }}>#${pr.number} ${pr.title}</div>
+                          <div style=${{ fontSize: '0.72rem', color: 'var(--muted)' }}>by ${pr.user} · ${pr.head_ref} → ${pr.base_ref} · ${formatTime(pr.updated_at)}</div>
+                        </div>
+                      </div>
+                    `)}
+                  </div>
+                `}
+              `}
+            </div>
+          `}
+        </div>
+        ${activeTab === 'manual' && html`
+          <div class="modal-actions">
+            <button class="btn-secondary" onClick=${onClose}>Cancel</button>
+            <button class="btn-primary" onClick=${submit}>Create</button>
+          </div>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// Components: Fork Session Modal
+// ============================================================
+function ForkSessionModal({ onClose, onSubmit, sourceSession }) {
+  const [name, setName] = useState('');
+  const [prompt, setPrompt] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const defaultName = sourceSession ? `Fork of ${sourceSession.name}` : '';
+
+  const submit = useCallback(() => {
+    setLoading(true);
+    onSubmit({
+      name: name.trim() || defaultName,
+      prompt: prompt.trim() || undefined,
+    });
+  }, [name, prompt, defaultName, onSubmit]);
+
+  return html`
+    <div class="modal-overlay" onClick=${onClose}>
+      <div class="modal" style=${{ maxWidth: '480px' }} onClick=${e => e.stopPropagation()}>
+        <div class="modal-header">
+          <h3>Fork Session</h3>
+          <button onClick=${onClose}><${Icons.Close} /></button>
+        </div>
+        <div class="modal-body">
+          <div style=${{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', padding: '10px 14px', background: 'var(--surface2)', borderRadius: 'var(--radius)', fontSize: '0.82rem' }}>
+            <${Icons.Fork} />
+            <span style=${{ color: 'var(--muted)' }}>Forking from:</span>
+            <span style=${{ fontWeight: 600 }}>${sourceSession?.name || 'Unknown'}</span>
+          </div>
           <label style=${{ fontSize: '0.82rem', color: 'var(--muted)', display: 'block', marginBottom: '6px' }}>Session Name</label>
           <input
             class="new-session-modal-input"
-            placeholder="My awesome project..."
+            placeholder=${defaultName}
             value=${name}
             onInput=${e => setName(e.target.value)}
             onKeyDown=${e => e.key === 'Enter' && submit()}
             autoFocus
           />
-          <label style=${{ fontSize: '0.82rem', color: 'var(--muted)', display: 'block', marginBottom: '6px', marginTop: '14px' }}>Clone Repository (optional)</label>
-          <input
+          <label style=${{ fontSize: '0.82rem', color: 'var(--muted)', display: 'block', marginBottom: '6px', marginTop: '14px' }}>Initial Prompt (optional)</label>
+          <textarea
             class="new-session-modal-input"
-            placeholder="https://github.com/user/repo.git"
-            value=${repoUrl}
-            onInput=${e => setRepoUrl(e.target.value)}
-            onKeyDown=${e => e.key === 'Enter' && submit()}
+            placeholder="Optional prompt to guide the forked session..."
+            value=${prompt}
+            onInput=${e => setPrompt(e.target.value)}
+            style=${{ minHeight: '80px', resize: 'vertical' }}
           />
         </div>
         <div class="modal-actions">
           <button class="btn-secondary" onClick=${onClose}>Cancel</button>
-          <button class="btn-primary" onClick=${submit}>Create</button>
+          <button class="btn-primary" onClick=${submit} disabled=${loading}>
+            ${loading ? 'Forking...' : 'Fork'}
+          </button>
         </div>
       </div>
     </div>
+  `;
+}
+
+// ============================================================
+// Components: Docker Settings
+// ============================================================
+function DockerSettings({ dockerStatus, onToggle }) {
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleClick = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setShowMenu(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showMenu]);
+
+  const statusClass = dockerStatus.enabled ? 'active' : dockerStatus.available ? 'available' : 'unavailable';
+  const label = dockerStatus.enabled ? 'Docker ●' : dockerStatus.available ? 'Docker ○' : 'Docker ✗';
+
+  return html`
+    <div class="settings-dropdown" ref=${menuRef}>
+      <div class="docker-indicator ${statusClass}" onClick=${() => dockerStatus.available && setShowMenu(!showMenu)}>
+        <${Icons.Docker} />
+        <span>${label}</span>
+      </div>
+      ${showMenu && html`
+        <div class="settings-menu">
+          <div class="settings-menu-item" onClick=${() => { onToggle(!dockerStatus.enabled); }}>
+            <label><${Icons.Docker} /> Docker Mode</label>
+            <div class="toggle-switch ${dockerStatus.enabled ? 'on' : ''}" />
+          </div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+// ============================================================
+// Components: Voice Chat
+// ============================================================
+function VoiceChat({ sessionId, userId, wsStatus: wsStat }) {
+  const [inVoice, setInVoice] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [showPanel, setShowPanel] = useState(false);
+  const [voiceUsers, setVoiceUsers] = useState([]);
+  const [speakingUsers, setSpeakingUsers] = useState(new Set());
+  const [localStream, setLocalStream] = useState(null);
+  const peerConnections = useRef(new Map()); // userId -> RTCPeerConnection
+  const remoteStreams = useRef(new Map()); // userId -> MediaStream
+  const audioElements = useRef(new Map()); // userId -> HTMLAudioElement
+  const analyserRefs = useRef(new Map()); // userId -> AnalyserNode
+  const animFrameRef = useRef(null);
+
+  // ICE servers configuration
+  const iceConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+  // Audio level detection
+  const detectSpeaking = useCallback(() => {
+    const speaking = new Set();
+    for (const [uid, analyser] of analyserRefs.current) {
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(data);
+      const avg = data.reduce((a, b) => a + b, 0) / data.length;
+      if (avg > 20) speaking.add(uid);
+    }
+    setSpeakingUsers(prev => {
+      const changed = speaking.size !== prev.size || [...speaking].some(s => !prev.has(s));
+      return changed ? speaking : prev;
+    });
+    animFrameRef.current = requestAnimationFrame(detectSpeaking);
+  }, []);
+
+  // Clean up peer connections
+  const cleanupPeers = useCallback(() => {
+    for (const [uid, pc] of peerConnections.current) {
+      pc.close();
+    }
+    peerConnections.current.clear();
+    remoteStreams.current.clear();
+    for (const [, audio] of audioElements.current) {
+      audio.pause();
+      audio.srcObject = null;
+    }
+    audioElements.current.clear();
+    analyserRefs.current.clear();
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+  }, []);
+
+  // Create a peer connection for a remote user
+  const createPeerConnection = useCallback((remoteUserId, isInitiator) => {
+    if (peerConnections.current.has(remoteUserId)) {
+      const existing = peerConnections.current.get(remoteUserId);
+      existing.close();
+    }
+
+    const pc = new RTCPeerConnection(iceConfig);
+    peerConnections.current.set(remoteUserId, pc);
+
+    // Add local tracks
+    if (localStream) {
+      localStream.getTracks().forEach(track => {
+        pc.addTrack(track, localStream);
+      });
+    }
+
+    // Handle remote stream
+    pc.ontrack = (event) => {
+      const stream = event.streams[0];
+      remoteStreams.current.set(remoteUserId, stream);
+
+      // Create or update audio element
+      let audio = audioElements.current.get(remoteUserId);
+      if (!audio) {
+        audio = new Audio();
+        audio.autoplay = true;
+        audioElements.current.set(remoteUserId, audio);
+      }
+      audio.srcObject = stream;
+
+      // Set up analyser for speaking detection
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        analyserRefs.current.set(remoteUserId, analyser);
+      } catch {}
+    };
+
+    // ICE candidate handling
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        ws.send(WS_EVENTS.VoiceSignal, {
+          sessionId,
+          targetUserId: remoteUserId,
+          signal: { type: 'ice-candidate', candidate: event.candidate },
+        }, sessionId);
+      }
+    };
+
+    if (isInitiator) {
+      pc.createOffer().then(offer => {
+        pc.setLocalDescription(offer);
+        ws.send(WS_EVENTS.VoiceSignal, {
+          sessionId,
+          targetUserId: remoteUserId,
+          signal: { type: 'offer', sdp: offer },
+        }, sessionId);
+      }).catch(() => {});
+    }
+
+    return pc;
+  }, [localStream, sessionId]);
+
+  // Handle incoming signals
+  useWS(WS_EVENTS.VoiceSignal, useCallback((msg) => {
+    if (!inVoice || !msg.payload) return;
+    const { signal, fromUserId } = msg.payload;
+    if (fromUserId === userId) return;
+
+    if (signal.type === 'offer') {
+      const pc = createPeerConnection(fromUserId, false);
+      pc.setRemoteDescription(new RTCSessionDescription(signal.sdp)).then(() => {
+        return pc.createAnswer();
+      }).then(answer => {
+        pc.setLocalDescription(answer);
+        ws.send(WS_EVENTS.VoiceSignal, {
+          sessionId,
+          targetUserId: fromUserId,
+          signal: { type: 'answer', sdp: answer },
+        }, sessionId);
+      }).catch(() => {});
+    } else if (signal.type === 'answer') {
+      const pc = peerConnections.current.get(fromUserId);
+      if (pc) {
+        pc.setRemoteDescription(new RTCSessionDescription(signal.sdp)).catch(() => {});
+      }
+    } else if (signal.type === 'ice-candidate') {
+      const pc = peerConnections.current.get(fromUserId);
+      if (pc && signal.candidate) {
+        pc.addIceCandidate(new RTCIceCandidate(signal.candidate)).catch(() => {});
+      }
+    }
+  }, [inVoice, userId, sessionId, createPeerConnection]));
+
+  // Handle other users joining/leaving voice
+  useWS(WS_EVENTS.VoiceJoin, useCallback((msg) => {
+    if (!inVoice || !msg.payload) return;
+    const { userId: joinedUserId } = msg.payload;
+    if (joinedUserId === userId) return;
+    setVoiceUsers(prev => {
+      if (prev.includes(joinedUserId)) return prev;
+      return [...prev, joinedUserId];
+    });
+    // Initiate peer connection as the existing user
+    createPeerConnection(joinedUserId, true);
+  }, [inVoice, userId, createPeerConnection]));
+
+  useWS(WS_EVENTS.VoiceLeave, useCallback((msg) => {
+    if (!msg.payload) return;
+    const { userId: leftUserId } = msg.payload;
+    setVoiceUsers(prev => prev.filter(u => u !== leftUserId));
+    // Clean up peer connection
+    const pc = peerConnections.current.get(leftUserId);
+    if (pc) {
+      pc.close();
+      peerConnections.current.delete(leftUserId);
+    }
+    const audio = audioElements.current.get(leftUserId);
+    if (audio) {
+      audio.pause();
+      audio.srcObject = null;
+      audioElements.current.delete(leftUserId);
+    }
+    analyserRefs.current.delete(leftUserId);
+  }, []));
+
+  // Join voice
+  const joinVoice = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setLocalStream(stream);
+      setInVoice(true);
+      setShowPanel(true);
+      setVoiceUsers([userId]);
+      ws.send(WS_EVENTS.VoiceJoin, { sessionId }, sessionId);
+      // Start audio level detection
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        analyserRefs.current.set(userId, analyser);
+      } catch {}
+      animFrameRef.current = requestAnimationFrame(detectSpeaking);
+    } catch {
+      // Microphone permission denied
+      if (window._showToast) window._showToast({ type: 'error', message: 'Microphone access denied. Please allow microphone permissions.' });
+    }
+  }, [sessionId, userId, detectSpeaking]);
+
+  // Leave voice
+  const leaveVoice = useCallback(() => {
+    // Notify others
+    ws.send(WS_EVENTS.VoiceLeave, { sessionId }, sessionId);
+    // Stop local stream
+    if (localStream) {
+      localStream.getTracks().forEach(t => t.stop());
+    }
+    setLocalStream(null);
+    setInVoice(false);
+    setShowPanel(false);
+    setMuted(false);
+    setVoiceUsers([]);
+    setSpeakingUsers(new Set());
+    cleanupPeers();
+  }, [localStream, sessionId, cleanupPeers]);
+
+  // Toggle mute
+  const toggleMute = useCallback(() => {
+    if (localStream) {
+      localStream.getAudioTracks().forEach(t => { t.enabled = muted; });
+      setMuted(!muted);
+    }
+  }, [localStream, muted]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
+      }
+      cleanupPeers();
+    };
+  }, []);
+
+  return html`
+    <${Fragment}>
+      <button
+        class="voice-btn ${inVoice ? 'active' : ''}"
+        onClick=${inVoice ? () => setShowPanel(!showPanel) : joinVoice}
+        disabled=${wsStat !== 'connected'}
+        title=${inVoice ? 'Voice chat connected' : 'Join voice chat'}
+        style=${{ opacity: wsStat === 'connected' ? 1 : 0.4 }}
+      >
+        ${inVoice ? html`<${Icons.Phone} />` : html`<${Icons.Mic} />`}
+        <span>${inVoice ? 'Voice ●' : 'Voice'}</span>
+      </button>
+      ${showPanel && inVoice && html`
+        <div class="voice-panel">
+          <div class="voice-panel-header">
+            <span>🎤 Voice Chat</span>
+            <button style=${{ color: 'var(--muted)', fontSize: '1rem', padding: '2px' }} onClick=${() => setShowPanel(false)}>
+              <${Icons.Close} />
+            </button>
+          </div>
+          <div class="voice-panel-body">
+            ${voiceUsers.map(uid => html`
+              <div key=${uid} class="voice-user">
+                <div class="voice-user-avatar">${getInitials(uid)}</div>
+                <span class="voice-user-name">${uid === userId ? 'You' : uid.slice(0, 12)}</span>
+                ${speakingUsers.has(uid) && html`<span class="voice-speaking-indicator" />`}
+                ${uid === userId && muted && html`<span class="voice-muted-indicator">🔇</span>`}
+              </div>
+            `)}
+            ${voiceUsers.length === 0 && html`
+              <div style=${{ padding: '20px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: '0.82rem' }}>
+                Connecting...
+              </div>
+            `}
+          </div>
+          <div class="voice-panel-footer">
+            <button class="voice-mute-btn ${muted ? 'muted' : ''}" onClick=${toggleMute}>
+              ${muted ? html`<${Icons.MicOff} />` : html`<${Icons.Mic} />`}
+              ${muted ? 'Unmute' : 'Mute'}
+            </button>
+            <button class="voice-leave-btn" onClick=${leaveVoice}>
+              <${Icons.PhoneOff} /> Leave
+            </button>
+          </div>
+        </div>
+      `}
+    <//>
   `;
 }
 
@@ -1565,10 +2645,34 @@ function App() {
   const [diffs, setDiffs] = useState([]);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
+  const [showForkModal, setShowForkModal] = useState(false);
+  const [forkSourceSessionId, setForkSourceSessionId] = useState(null);
   const [activities, setActivities] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [agentRunning, setAgentRunning] = useState(false);
+  const [agents, setAgents] = useState([]);
   const [toast, setToast] = useState(null);
+  const [githubAuth, setGithubAuth] = useState({ authenticated: false, user: null, githubConnected: false });
+  const [dockerStatus, setDockerStatus] = useState({ available: false, enabled: false, containers: 0 });
+
+  // Expose toast for voice chat
+  useEffect(() => { window._showToast = setToast; }, []);
+
+  // Check GitHub auth status on mount
+  useEffect(() => {
+    fetch('/api/auth/status')
+      .then(r => r.json())
+      .then(data => setGithubAuth(data))
+      .catch(() => {});
+  }, []);
+
+  // Fetch Docker status on mount
+  useEffect(() => {
+    fetch('/api/docker/status')
+      .then(r => r.json())
+      .then(data => setDockerStatus(data))
+      .catch(() => {});
+  }, []);
 
   // Connect WebSocket on mount
   useEffect(() => {
@@ -1712,19 +2816,23 @@ function App() {
     // Buffer agent output and flush as a single chat message after 500ms of silence
     if (msg.payload?.data && msg.sessionId) {
       const data = msg.payload.data;
+      const agentId = msg.payload.agentId || 'default';
       if (!window._agentBuffer) window._agentBuffer = {};
-      if (!window._agentBuffer[msg.sessionId]) window._agentBuffer[msg.sessionId] = '';
-      window._agentBuffer[msg.sessionId] += data;
+      const bufferKey = msg.sessionId + ':' + agentId;
+      if (!window._agentBuffer[bufferKey]) window._agentBuffer[bufferKey] = '';
+      window._agentBuffer[bufferKey] += data;
 
-      if (window._agentFlushTimer) clearTimeout(window._agentFlushTimer);
-      window._agentFlushTimer = setTimeout(() => {
+      if (window._agentFlushTimers) clearTimeout(window._agentFlushTimers[bufferKey]);
+      else window._agentFlushTimers = {};
+      window._agentFlushTimers[bufferKey] = setTimeout(() => {
         const sid = msg.sessionId;
-        const accumulated = window._agentBuffer?.[sid] || '';
+        const accumulated = window._agentBuffer?.[bufferKey] || '';
         if (accumulated) {
           const agentMsg = {
             id: 'agent-' + Date.now(),
             sessionId: sid,
             userId: 'agent',
+            agentId: agentId,
             content: accumulated,
             type: 'text',
             timestamp: Date.now(),
@@ -1733,7 +2841,7 @@ function App() {
             ...prev,
             [sid]: [...(prev[sid] || []), agentMsg],
           }));
-          if (window._agentBuffer) window._agentBuffer[sid] = '';
+          if (window._agentBuffer) window._agentBuffer[bufferKey] = '';
         }
       }, 500);
     }
@@ -1742,23 +2850,25 @@ function App() {
   useWS(WS_EVENTS.AgentStop, useCallback((msg) => {
     // Agent stopped — reset running state and flush buffer
     setAgentRunning(false);
-    if (msg.sessionId && window._agentBuffer?.[msg.sessionId]) {
-      const sid = msg.sessionId;
-      const accumulated = window._agentBuffer[sid];
+    const agentId = msg.payload?.agentId || 'default';
+    if (msg.sessionId) {
+      const bufferKey = msg.sessionId + ':' + agentId;
+      const accumulated = window._agentBuffer?.[bufferKey];
       if (accumulated) {
         const agentMsg = {
           id: 'agent-' + Date.now(),
-          sessionId: sid,
+          sessionId: msg.sessionId,
           userId: 'agent',
+          agentId: agentId,
           content: accumulated,
           type: 'text',
           timestamp: Date.now(),
         };
         setMessages(prev => ({
           ...prev,
-          [sid]: [...(prev[sid] || []), agentMsg],
+          [msg.sessionId]: [...(prev[msg.sessionId] || []), agentMsg],
         }));
-        window._agentBuffer[sid] = '';
+        window._agentBuffer[bufferKey] = '';
       }
     }
   }, []));
@@ -1766,6 +2876,13 @@ function App() {
   useWS(WS_EVENTS.AgentStatus, useCallback((msg) => {
     if (msg.payload) {
       setAgentRunning(!!msg.payload.running);
+    }
+  }, []));
+
+  useWS(WS_EVENTS.AgentList, useCallback((msg) => {
+    if (msg.payload?.agents) {
+      setAgents(msg.payload.agents);
+      setAgentRunning(msg.payload.agents.some(a => a.running));
     }
   }, []));
 
@@ -1777,7 +2894,18 @@ function App() {
     ws.send(WS_EVENTS.AgentStatus, { sessionId: id }, id);
   }, []);
 
-  const handleCreateSession = useCallback((name, repoUrl) => {
+  const handleCreateSession = useCallback((name, repoUrl, existingSession) => {
+    if (existingSession) {
+      // Session already created (from issue/PR) — just add it locally
+      setSessions(prev => {
+        const exists = prev.find(s => s.id === existingSession.id);
+        if (exists) return prev;
+        return [...prev, existingSession];
+      });
+      setCurrentSessionId(existingSession.id);
+      setShowNewSessionModal(false);
+      return;
+    }
     fetch('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1809,10 +2937,60 @@ function App() {
       .catch(() => {});
   }, [currentSessionId]);
 
+  const handleForkSession = useCallback((id) => {
+    setForkSourceSessionId(id);
+    setShowForkModal(true);
+  }, []);
+
+  const handleForkSubmit = useCallback(({ name, prompt }) => {
+    if (!forkSourceSessionId) return;
+    fetch(`/api/sessions/${forkSourceSessionId}/fork`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, prompt }),
+    })
+      .then(r => r.json())
+      .then(session => {
+        if (session?.id) {
+          setSessions(prev => [...prev, session]);
+          setCurrentSessionId(session.id);
+          setShowForkModal(false);
+          setForkSourceSessionId(null);
+          setToast({ type: 'success', message: 'Session forked successfully' });
+        }
+      })
+      .catch(() => {
+        setToast({ type: 'error', message: 'Failed to fork session' });
+        setShowForkModal(false);
+      });
+  }, [forkSourceSessionId]);
+
   const handleSendMessage = useCallback((content, type) => {
     if (!currentSessionId || !content) return;
     ws.send(WS_EVENTS.ChatMessage, { sessionId: currentSessionId, content, type }, currentSessionId);
   }, [currentSessionId]);
+
+  const handleGithubClick = useCallback(() => {
+    if (!githubAuth?.githubConnected) {
+      window.location.href = '/api/auth/github';
+    }
+  }, [githubAuth]);
+
+  const handleDockerToggle = useCallback((enabled) => {
+    fetch('/api/docker/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        setDockerStatus(prev => ({ ...prev, enabled: data.enabled }));
+        setToast({ type: 'success', message: data.enabled ? 'Docker mode enabled' : 'Docker mode disabled' });
+      })
+      .catch(() => {
+        setToast({ type: 'error', message: 'Failed to toggle Docker mode' });
+      });
+  }, []);
 
   const currentMessages = messages[currentSessionId] || [];
 
@@ -1820,14 +2998,15 @@ function App() {
   if (!currentSessionId) {
     return html`
       <div class="app">
-        <${Header} wsStatus=${wsStatus} userId=${userId} sessions=${sessions} currentSessionId=${null} />
+        <${Header} wsStatus=${wsStatus} userId=${userId} sessions=${sessions} currentSessionId=${null} githubAuth=${githubAuth} onGithubClick=${handleGithubClick} dockerStatus=${dockerStatus} onDockerToggle=${handleDockerToggle} voiceChatProps=${null} />
         <${Dashboard}
           sessions=${sessions}
           onSelectSession=${handleSelectSession}
           onCreateSession=${() => setShowNewSessionModal(true)}
           activities=${activities}
         />
-        ${showNewSessionModal && html`<${NewSessionModal} onClose=${() => setShowNewSessionModal(false)} onSubmit=${handleCreateSession} />`}
+        ${showNewSessionModal && html`<${NewSessionModal} onClose=${() => setShowNewSessionModal(false)} onSubmit=${handleCreateSession} githubAuth=${githubAuth} />`}
+        ${showForkModal && html`<${ForkSessionModal} onClose=${() => { setShowForkModal(false); setForkSourceSessionId(null); }} onSubmit=${handleForkSubmit} sourceSession=${sessions.find(s => s.id === forkSourceSessionId)} />`}
         <${Toast} toast=${toast} onClose=${() => setToast(null)} />
       </div>
     `;
@@ -1836,7 +3015,7 @@ function App() {
   // Session view
   return html`
     <div class="app">
-      <${Header} wsStatus=${wsStatus} userId=${userId} sessions=${sessions} currentSessionId=${currentSessionId} />
+      <${Header} wsStatus=${wsStatus} userId=${userId} sessions=${sessions} currentSessionId=${currentSessionId} githubAuth=${githubAuth} onGithubClick=${handleGithubClick} dockerStatus=${dockerStatus} onDockerToggle=${handleDockerToggle} voiceChatProps=${{ sessionId: currentSessionId, userId, wsStatus }} />
       <div class="main">
         <${Sidebar}
           sessions=${sessions}
@@ -1844,6 +3023,7 @@ function App() {
           onSelectSession=${handleSelectSession}
           onCreateSession=${() => setShowNewSessionModal(true)}
           onDeleteSession=${handleDeleteSession}
+          onForkSession=${handleForkSession}
         />
         <div class="center-panel">
           <div class="tab-bar">
@@ -1856,7 +3036,7 @@ function App() {
           <div class="content-area" style=${{ display: 'flex', flexDirection: 'column' }}>
             ${loadingMessages && html`<div class="loading-spinner"><div class="spinner" /></div>`}
             ${!loadingMessages && centerTab === 'chat' && html`
-              <${ChatTab} messages=${currentMessages} users=${users} sessionId=${currentSessionId} onSend=${handleSendMessage} agentRunning=${agentRunning} onAgentRunningChange=${setAgentRunning} />
+              <${ChatTab} messages=${currentMessages} users=${users} sessionId=${currentSessionId} onSend=${handleSendMessage} agentRunning=${agentRunning} onAgentRunningChange=${setAgentRunning} agents=${agents} />
             `}
             ${centerTab === 'terminal' && html`
               <${TerminalTab} sessionId=${currentSessionId} terminalOutput=${terminalOutput} />
@@ -1875,7 +3055,8 @@ function App() {
           onToggle=${() => setRightCollapsed(!rightCollapsed)}
         />
       </div>
-      ${showNewSessionModal && html`<${NewSessionModal} onClose=${() => setShowNewSessionModal(false)} onSubmit=${handleCreateSession} />`}
+      ${showNewSessionModal && html`<${NewSessionModal} onClose=${() => setShowNewSessionModal(false)} onSubmit=${handleCreateSession} githubAuth=${githubAuth} />`}
+      ${showForkModal && html`<${ForkSessionModal} onClose=${() => { setShowForkModal(false); setForkSourceSessionId(null); }} onSubmit=${handleForkSubmit} sourceSession=${sessions.find(s => s.id === forkSourceSessionId)} />`}
       <${Toast} toast=${toast} onClose=${() => setToast(null)} />
     </div>
   `;
