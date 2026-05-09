@@ -29,7 +29,7 @@ const HOST = process.env.MADE_HOST ?? '0.0.0.0';
 const AUTH_TOKEN = process.env.MADE_TOKEN; // optional
 const PROJECT_DIR =
   process.env.MADE_PROJECT_DIR ?? process.cwd();
-const AGENT_CMD = process.env.MADE_AGENT_CMD ?? 'claude';
+const AGENT_CMD = process.env.MADE_AGENT_CMD ?? '';
 const DOCKER_ENABLED = process.env.MADE_DOCKER_ENABLED === 'true';
 
 // GitHub OAuth configuration
@@ -578,6 +578,14 @@ app.get('/api/docker/status', async (_req, res) => {
     available,
     enabled: dockerEnabled,
     containers: containerManager.containerCount,
+  });
+});
+
+// Server config (agent command, etc.)
+app.get('/api/config', (_req, res) => {
+  res.json({
+    agentCmd: AGENT_CMD || '',
+    hasAgent: AGENT_CMD !== '',
   });
 });
 

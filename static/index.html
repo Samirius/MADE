@@ -967,12 +967,20 @@ function ChatTab({ messages, users, sessionId, onSend, agentRunning, onAgentRunn
   const [input, setInput] = useState('');
   const [agentMode, setAgentMode] = useState(false);
   const [agentName, setAgentName] = useState('Agent 1');
+  const [agentCmd, setAgentCmd] = useState('');
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [autocompleteItems, setAutocompleteItems] = useState([]);
   const [acIndex, setAcIndex] = useState(0);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  // Fetch server config for agent command
+  useEffect(() => {
+    fetch('/api/config').then(r => r.json()).then(cfg => {
+      if (cfg.agentCmd) setAgentCmd(cfg.agentCmd);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1073,7 +1081,7 @@ function ChatTab({ messages, users, sessionId, onSend, agentRunning, onAgentRunn
         window._agentNames[newAgentId] = agentName;
         ws.send(WS_EVENTS.AgentStart, {
           sessionId,
-          config: { cmd: 'claude' },
+          config: { cmd: agentCmd || 'bash' },
           agentId: newAgentId,
           name: agentName,
         }, sessionId);
@@ -1210,7 +1218,14 @@ function ChatTab({ messages, users, sessionId, onSend, agentRunning, onAgentRunn
             value=${agentName}
             onInput=${e => setAgentName(e.target.value)}
             placeholder="Agent name..."
-            style=${{ width: '100px', padding: '4px 8px', fontSize: '0.78rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)' }}
+            style=${{ width: '90px', padding: '4px 8px', fontSize: '0.78rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)' }}
+          />
+          <input
+            type="text"
+            value=${agentCmd}
+            onInput=${e => setAgentCmd(e.target.value)}
+            placeholder="Command (e.g. bash, python3)..."
+            style=${{ width: '160px', padding: '4px 8px', fontSize: '0.78rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', color: 'var(--text)' }}
           />
         `}
         <button class="input-btn send-btn" onClick=${handleSend} title="Send message">
