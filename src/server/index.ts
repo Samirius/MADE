@@ -29,7 +29,7 @@ const HOST = process.env.MADE_HOST ?? '0.0.0.0';
 const AUTH_TOKEN = process.env.MADE_TOKEN; // optional
 const PROJECT_DIR =
   process.env.MADE_PROJECT_DIR ?? process.cwd();
-const AGENT_CMD = process.env.MADE_AGENT_CMD ?? '';
+const AGENT_CMD = process.env.MADE_AGENT_CMD ?? 'openclaw';
 const DOCKER_ENABLED = process.env.MADE_DOCKER_ENABLED === 'true';
 
 // GitHub OAuth configuration
