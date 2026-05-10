@@ -711,11 +711,11 @@
     "branch": "made/bn0fuxof-hermes-test",
     "workDir": "/home/stark/ace-workspace/.sessions/bn0fuxof",
     "createdAt": 1778250619652,
-    "updatedAt": 1778250619652,
+    "updatedAt": 1778250683679,
     "createdBy": "debug",
     "agentRunning": false,
-    "lastCommit": null,
-    "summary": "",
+    "lastCommit": "say hello in exactly 3 words",
+    "summary": "say hello in exactly 3 words",
     "messages": [
       {
         "id": "wp10y78f",
@@ -738,6 +738,110 @@
           "agentId": "hermes",
           "triggeredBy": "debug"
         }
+      },
+      {
+        "id": "zxjl2iat",
+        "sessionId": "bn0fuxof",
+        "userId": "agent",
+        "userName": "Agent",
+        "type": "agent_stream",
+        "content": "Hello to you!",
+        "timestamp": 1778250682211
+      },
+      {
+        "id": "fz38sj3l",
+        "sessionId": "bn0fuxof",
+        "userId": "agent",
+        "userName": "Agent",
+        "type": "agent_stream",
+        "content": "\nsession_id: 20260508_173037_22a3f4\n",
+        "timestamp": 1778250682214
+      },
+      {
+        "id": "4vt8q36m",
+        "sessionId": "bn0fuxof",
+        "userId": "agent",
+        "userName": "Agent",
+        "type": "agent_done",
+        "content": "Agent finished",
+        "timestamp": 1778250683591,
+        "metadata": {
+          "exitCode": 0,
+          "filesChanged": []
+        }
+      },
+      {
+        "id": "61hpiwq3",
+        "sessionId": "bn0fuxof",
+        "userId": "0un5235h",
+        "userName": "Samir",
+        "type": "chat",
+        "content": "hello",
+        "timestamp": 1778251316820
+      },
+      {
+        "id": "ijhmmikl",
+        "sessionId": "bn0fuxof",
+        "userId": "0un5235h",
+        "userName": "Samir",
+        "type": "chat",
+        "content": "are we working or not",
+        "timestamp": 1778251322072
+      },
+      {
+        "id": "5t06t4re",
+        "sessionId": "bn0fuxof",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "agent_start",
+        "content": "can you check if this is wokring or not",
+        "timestamp": 1778251331320,
+        "metadata": {
+          "agentId": null,
+          "triggeredBy": "0un5235h"
+        }
+      },
+      {
+        "id": "a53x2esn",
+        "sessionId": "bn0fuxof",
+        "userId": "agent",
+        "userName": "Agent",
+        "type": "agent_stream",
+        "content": "\u001b[0m",
+        "timestamp": 1778251347382
+      },
+      {
+        "id": "b5gtvepc",
+        "sessionId": "bn0fuxof",
+        "userId": "agent",
+        "userName": "Agent",
+        "type": "agent_stream",
+        "content": "\n> build · glm-5v-turbo\n\u001b[0m\n",
+        "timestamp": 1778251347383
+      }
+    ],
+    "plan": null
+  },
+  "wvss6gx1": {
+    "id": "wvss6gx1",
+    "name": "new test",
+    "branch": "made/wvss6gx1-new-test",
+    "workDir": "/home/stark/ace-workspace/.sessions/wvss6gx1",
+    "createdAt": 1778251381260,
+    "updatedAt": 1778251381260,
+    "createdBy": "0un5235h",
+    "agentRunning": false,
+    "lastCommit": null,
+    "summary": "",
+    "messages": [
+      {
+        "id": "y3y4e3wu",
+        "sessionId": "wvss6gx1",
+        "userId": "system",
+        "userName": "MADE",
+        "type": "system",
+        "content": "Session \"new test\" created. Branch: made/wvss6gx1-new-test",
+        "timestamp": 1778251381260
       }
     ],
     "plan": null
